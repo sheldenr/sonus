@@ -40,6 +40,10 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -51,15 +55,82 @@ body {
   user-select: none;
 }
 
-/* Container */
-.app-container {
+/* Page Layout Wrappers */
+.page-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Screen 1: Single-Screen Studio Screen */
+.studio-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.15rem 1.5rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  box-sizing: border-box;
+}
+
+/* Screen 2+: More Info & FAQs */
+.info-screen {
   max-width: 1060px;
   width: 100%;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  padding: 3.5rem 1.5rem 3.5rem;
   display: flex;
   flex-direction: column;
-  gap: 2.5rem;
+  gap: 2.25rem;
+  box-sizing: border-box;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Scroll Cue Indicator */
+.scroll-cue {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.scroll-cue-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  text-transform: uppercase;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  transition: all 0.25s ease;
+}
+
+.scroll-cue-link:hover {
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.scroll-cue-link svg {
+  animation: bounceDown 1.8s infinite ease-in-out;
+}
+
+@keyframes bounceDown {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
 }
 
 /* Header */
@@ -67,7 +138,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 1.5rem;
+  padding-bottom: 0.65rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -238,7 +309,7 @@ body {
 .eq-canvas-card {
   position: relative;
   width: 100%;
-  height: 250px;
+  height: 155px;
   background: #060606;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -252,22 +323,22 @@ body {
 
 .canvas-interactive-overlay {
   position: absolute;
-  top: 0.75rem;
-  left: 1.25rem;
+  top: 0.55rem;
+  left: 1.15rem;
   pointer-events: none;
   z-index: 5;
 }
 
 .canvas-instruction {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.28);
 }
 
 /* Docked Faders Deck */
 .eq-docked-faders {
-  padding: 1.25rem 1.25rem 1rem;
+  padding: 0.5rem 1rem 0.35rem;
   background: var(--bg-surface);
 }
 
@@ -277,11 +348,11 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 1.25rem 1.75rem;
+  padding: 0.65rem 1.25rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  gap: 1.5rem;
+  border-radius: var(--radius-md);
+  gap: 1rem;
 }
 
 .master-playback {
@@ -427,7 +498,7 @@ body {
 .section-container {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.45rem;
 }
 
 .section-header {
@@ -438,7 +509,7 @@ body {
 
 .section-title {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -446,26 +517,26 @@ body {
 }
 
 .section-hint {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   color: var(--text-tertiary);
 }
 
 /* Presets Grid */
 .presets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 0.35rem;
 }
 
 .preset-btn {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 0.85rem 0.95rem;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.65rem;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.3rem;
+  gap: 0.15rem;
   cursor: pointer;
   text-align: left;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -482,11 +553,11 @@ body {
 .preset-btn.active {
   background: var(--bg-surface-elevated);
   border-color: var(--border-bright);
-  box-shadow: inset 0 0 0 1px var(--accent-white), 0 0 14px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px var(--accent-white), 0 0 12px rgba(255, 255, 255, 0.08);
 }
 
 .preset-name {
-  font-size: 0.85rem;
+  font-size: 0.76rem;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--text-primary);
@@ -499,7 +570,7 @@ body {
 
 .preset-desc {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.58rem;
   color: var(--text-tertiary);
   letter-spacing: -0.01em;
 }
@@ -516,15 +587,14 @@ body {
   color: #ffffff;
 }
 
-
 /* EQ Faders Grid - 10 Columns */
 .eq-grid {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
-  gap: 0.75rem;
+  gap: 0.45rem;
   align-items: end;
-  height: 230px;
-  padding: 0 0.25rem 0.25rem;
+  height: 120px;
+  padding: 0 0.15rem 0.15rem;
 }
 
 .eq-channel {
@@ -538,9 +608,9 @@ body {
 
 .eq-db-value {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--text-tertiary);
-  min-height: 1rem;
+  min-height: 0.85rem;
   letter-spacing: -0.02em;
   transition: color 0.15s ease;
 }
@@ -552,7 +622,7 @@ body {
 
 .eq-slider-track-wrap {
   position: relative;
-  height: 155px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -564,8 +634,8 @@ body {
   -webkit-appearance: none;
   appearance: none;
   position: absolute;
-  width: 145px;
-  height: 4px;
+  width: 68px;
+  height: 3px;
   background: var(--border-subtle);
   border-radius: var(--radius-full);
   outline: none;
@@ -578,24 +648,24 @@ body {
 .eq-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 22px;
+  width: 11px;
+  height: 16px;
   background: #1e1e1e;
   border: 1px solid #4a4a4a;
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
 .eq-slider::-moz-range-thumb {
-  width: 14px;
-  height: 22px;
+  width: 11px;
+  height: 16px;
   background: #1e1e1e;
   border: 1px solid #4a4a4a;
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
@@ -620,20 +690,20 @@ body {
 
 .eq-freq-label {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   color: var(--text-secondary);
   letter-spacing: -0.01em;
-  margin-top: 0.5rem;
+  margin-top: 0.2rem;
 }
 
 .eq-boost-pill {
   position: absolute;
-  bottom: -22px;
+  bottom: -18px;
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   color: var(--text-tertiary);
   cursor: pointer;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
   opacity: 0;

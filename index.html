@@ -44,9 +44,11 @@
 </head>
 <body>
 
-  <main class="app-container">
-    <!-- Header -->
-    <header class="app-header">
+  <main class="page-wrapper">
+    <!-- Screen 1: Complete Single-Screen Audio Studio -->
+    <div class="studio-screen" id="studio">
+      <!-- Header -->
+      <header class="app-header">
       <div class="brand-section">
         <h1 class="brand-title">NOISE</h1>
         <div class="status-badge">
@@ -239,9 +241,21 @@
       </div>
     </section>
 
+      <!-- Scroll cue to info below -->
+      <div class="scroll-cue">
+        <a href="#more-info" class="scroll-cue-link" title="Explore reflections, creator note, and acoustics FAQ">
+          <span>LEARN MORE & FAQS</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </a>
+      </div>
+    </div> <!-- /studio-screen -->
 
-    <!-- Zen Reflection Quote -->
-    <section class="quote-section" aria-label="Reflection on Silence">
+    <!-- Screen 2+: Reflections, Creator Note & FAQs -->
+    <div class="info-screen" id="more-info">
+      <!-- Zen Reflection Quote -->
+      <section class="quote-section" aria-label="Reflection on Silence">
       <div class="quote-card" id="quoteCard">
         <div class="quote-glyph" aria-hidden="true">“</div>
         <blockquote class="quote-content">
@@ -360,6 +374,7 @@
         NOISE • A beautiful way to work in silence
       </div>
     </footer>
+    </div> <!-- /info-screen -->
   </main>
 
   <script src="js/audio.js"></script>
