@@ -29,8 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const eqActiveBandsCount = document.getElementById('eqActiveBandsCount');
   const surpriseDesc = document.getElementById('surpriseDesc');
 
-  const vizModeSpectrum = document.getElementById('vizModeSpectrum');
+  const vizModeBars = document.getElementById('vizModeBars');
   const vizModeWave = document.getElementById('vizModeWave');
+  const vizModeCurve = document.getElementById('vizModeCurve');
 
   const timerSelect = document.getElementById('timerSelect');
   const timerCountdown = document.getElementById('timerCountdown');
@@ -310,17 +311,33 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   // 5. Visualizer View Modes
   // =========================================================================
-  vizModeSpectrum.addEventListener('click', () => {
-    visualizer.setMode('spectrum');
-    vizModeSpectrum.classList.add('active');
-    vizModeWave.classList.remove('active');
-  });
+  function setVizActiveButton(activeBtn) {
+    [vizModeBars, vizModeWave, vizModeCurve].forEach(btn => {
+      if (btn) btn.classList.remove('active');
+    });
+    if (activeBtn) activeBtn.classList.add('active');
+  }
 
-  vizModeWave.addEventListener('click', () => {
-    visualizer.setMode('wave');
-    vizModeWave.classList.add('active');
-    vizModeSpectrum.classList.remove('active');
-  });
+  if (vizModeBars) {
+    vizModeBars.addEventListener('click', () => {
+      visualizer.setMode('bars');
+      setVizActiveButton(vizModeBars);
+    });
+  }
+
+  if (vizModeWave) {
+    vizModeWave.addEventListener('click', () => {
+      visualizer.setMode('wave');
+      setVizActiveButton(vizModeWave);
+    });
+  }
+
+  if (vizModeCurve) {
+    vizModeCurve.addEventListener('click', () => {
+      visualizer.setMode('curve');
+      setVizActiveButton(vizModeCurve);
+    });
+  }
 
   // =========================================================================
   // 6. Sleep Timer Logic

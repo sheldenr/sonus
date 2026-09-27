@@ -3,8 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NOISE • Minimal Ambient Sound Generator</title>
-  <meta name="description" content="Minimalist all-black ambient noise generator with curated presets and 10-band custom equalizer.">
+  <title>NOISE | A beautiful way to work in silence</title>
+  
+  <!-- SEO & Social Meta Tags -->
+  <meta name="description" content="NOISE is a minimalist, all-black ambient sound generator engineered for deep work, flow state, and peaceful silence. Choose from 17 sound presets or sculpt custom acoustic frequencies with our 10-band equalizer. 100% free, private, and client-side.">
+  <meta name="keywords" content="noise generator, brown noise, pink noise, white noise, sound masker, speech blocker, study sounds, focus sound generator, 10 band equalizer, ambient sound generator, web audio api">
+  <meta name="author" content="Shelden Rattray">
+  <meta name="theme-color" content="#000000">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://noise.sheldenrattray.com/">
+  <meta property="og:title" content="NOISE | A beautiful way to work in silence">
+  <meta property="og:description" content="A minimalist, all-black ambient noise generator for deep work, flow state, and restful silence. Features 17 presets and a 10-band frequency sculpt equalizer.">
+  <meta property="og:site_name" content="NOISE">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NOISE | A beautiful way to work in silence">
+  <meta name="twitter:description" content="A minimalist, all-black ambient noise generator for deep work, flow state, and restful silence.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "NOISE | A beautiful way to work in silence",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "All",
+    "description": "Minimalist all-black ambient noise generator with 17 curated sound presets and a 10-band custom equalizer for deep focus, flow state, and sleep.",
+    "author": {
+      "@type": "Person",
+      "name": "Shelden Rattray"
+    }
+  }
+  </script>
+
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>〰</text></svg>">
 </head>
@@ -23,7 +57,7 @@
 
       <div class="header-meta">
         <div class="timer-pill">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
@@ -35,19 +69,20 @@
             <option value="60">60 min</option>
             <option value="90">90 min</option>
           </select>
-          <span id="timerCountdown" style="display: none; font-size: 0.72rem; color: var(--text-primary); font-family: var(--font-mono);"></span>
+          <span id="timerCountdown" class="timer-countdown"></span>
         </div>
       </div>
     </header>
 
-    <!-- Visualizer Canvas -->
-    <div class="visualizer-wrapper">
+    <!-- Centerpiece: Segmented LED Bar Spectrum Analyzer -->
+    <section class="visualizer-wrapper" aria-label="Audio Visualizer">
       <div class="visualizer-toolbar">
-        <button id="vizModeSpectrum" class="viz-btn active" title="Frequency Spectrum View">SPECTRUM</button>
+        <button id="vizModeBars" class="viz-btn active" title="Segmented LED VU Bars View">BARS</button>
         <button id="vizModeWave" class="viz-btn" title="Oscilloscope Waveform View">WAVE</button>
+        <button id="vizModeCurve" class="viz-btn" title="Continuous Smooth Spectrum View">CURVE</button>
       </div>
       <canvas id="vizCanvas" class="visualizer-canvas"></canvas>
-    </div>
+    </section>
 
     <!-- Master Control Deck -->
     <section class="master-deck" aria-label="Playback and Volume Controls">
@@ -93,7 +128,6 @@
       </div>
 
       <div class="presets-grid" id="presetsGrid">
-        <!-- Preset items dynamically populated or pre-rendered -->
         <button class="preset-btn active" data-preset="Brown">
           <span class="preset-name">Brown</span>
           <span class="preset-desc">1/f² Deep waterfall</span>
@@ -181,11 +215,11 @@
       </div>
     </section>
 
-    <!-- 10-Band Graphic Equalizer -->
+    <!-- 10-Band Custom Equalizer -->
     <section class="section-container" aria-label="10-Band Custom Equalizer">
       <div class="section-header">
         <h2 class="section-title">Custom Frequency Equalizer</h2>
-        <span class="section-hint">Selectively increase or cut 10 frequency ranges (-24dB to +24dB)</span>
+        <span class="section-hint">Selectively increase or sculpt 10 frequency ranges (-24dB to +24dB)</span>
       </div>
 
       <div class="eq-container">
@@ -206,8 +240,97 @@
 
         <!-- 10 Frequency Faders Grid -->
         <div class="eq-grid" id="eqGrid">
-          <!-- 10 Channels inserted here: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz -->
+          <!-- Populated dynamically: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz -->
         </div>
+      </div>
+    </section>
+
+    <!-- Developer Note Section -->
+    <section class="dev-note-container" aria-label="Developer Note">
+      <div class="dev-note-card">
+        <div class="dev-note-header">
+          <span class="dev-note-tag">DEVELOPER NOTE</span>
+          <span class="dev-note-subtitle">A sanctuary for focused minds</span>
+        </div>
+        
+        <div class="dev-note-body">
+          <p>
+            The modern web is perpetually loud. Notifications, intrusive trackers, blinking banners, and cognitive clutter fight constantly for your attention. I built <strong>NOISE</strong> to be the exact opposite: an uncompromised, beautiful sanctuary where you can sit down, put on headphones, and disappear into your work.
+          </p>
+          <p>
+            Every frequency in this generator runs directly in your browser through the native Web Audio API — there are no servers streaming audio files, no subscriptions, and zero analytics tracking your focus. Whether you use deep <em>Brown noise</em> to soothe an ADHD mind, <em>Speech Blocker</em> to mute open-office chatter, or sculpt your own custom 10-band profile, I hope this tool brings quiet clarity to your craft.
+          </p>
+        </div>
+
+        <div class="dev-note-signature-row">
+          <div class="dev-signature-box">
+            <img src="assets/signature.svg" alt="Shelden Rattray Signature" class="dev-signature-image" width="140" height="70">
+            <div class="dev-signature-meta">
+              <span class="dev-name">Shelden Rattray</span>
+              <span class="dev-title">Creator & Developer</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="section-container" aria-label="Frequently Asked Questions">
+      <div class="section-header">
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        <span class="section-hint">Acoustics, privacy & science</span>
+      </div>
+
+      <div class="faq-grid">
+        <details class="faq-item">
+          <summary class="faq-question">
+            <span>How do the different noise colors work?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="faq-answer">
+            <p><strong>Brown noise</strong> has power density inversely proportional to frequency squared (1/f²), yielding deep, heavy waterfall-like rumbles that relax the nervous system. <strong>Pink noise</strong> decreases by 3dB per octave (1/f), mimicking natural rain and rustling wind. <strong>White noise</strong> distributes energy evenly across all frequencies (flat 0dB/octave), while <strong>Grey noise</strong> is filtered through an inverted psychoacoustic equal-loudness curve so every frequency sounds equally loud to human ears.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-question">
+            <span>What is "Speech Blocker" and how does it protect focus?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="faq-answer">
+            <p>Human speech intelligibility resides primarily within the 250Hz – 3.8kHz frequency band (vocal formants and consonant bursts). <em>Speech Blocker</em> concentrates acoustic energy into this critical range with conversational roll-offs, effectively raising your Speech Reception Threshold so nearby conversation becomes unintelligible background murmur without causing auditory fatigue.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-question">
+            <span>How do I use the 10-Band Equalizer to create custom noise?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="faq-answer">
+            <p>Each vertical fader governs an octave band (31Hz up to 16kHz). You can selectively boost any range up to +24dB or cut it down to -24dB. The audio pipeline features an integrated studio-grade limiter (DynamicsCompressorNode) so you can push and sculpt frequencies as hard as you like without digital clipping or distortion.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-question">
+            <span>What are the "Infra", "Ultra", and "Ear Massage" presets?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="faq-answer">
+            <p><strong>Infra</strong> cuts off everything above 60Hz to produce a subterranean, seismic body rumble. <strong>Ultra</strong> isolates frequencies above 8kHz for light, airy hiss. <strong>Ear Massage</strong> uses dual out-of-phase low-frequency oscillators (LFOs) to slowly sweep resonant filters across both ears, creating a gentle binaural acoustic wave.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary class="faq-question">
+            <span>Is this application private and offline-capable?</span>
+            <svg class="faq-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="faq-answer">
+            <p>Yes, 100%. All sound synthesis is calculated client-side in real time using math and the Web Audio API. No audio files are downloaded, no tracking scripts are executed, and no user data is sent anywhere. It runs seamlessly even without an internet connection.</p>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -221,7 +344,7 @@
       </div>
 
       <div class="footer-copy">
-        Pure Web Audio API • 100% Client-side
+        NOISE • A beautiful way to work in silence
       </div>
     </footer>
   </main>
