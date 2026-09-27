@@ -1,495 +1,232 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NOISE | A beautiful way to work in silence</title>
-  
-  <!-- SEO & Social Meta Tags -->
-  <meta name="description" content="NOISE is a minimalist, all-black ambient sound generator engineered for deep work, flow state, and peaceful silence. Choose from 17 sound presets or sculpt custom acoustic frequencies with our 10-band equalizer. 100% free, private, and client-side.">
-  <meta name="keywords" content="noise generator, brown noise, pink noise, white noise, sound masker, speech blocker, study sounds, focus sound generator, 10 band equalizer, ambient sound generator, web audio api">
-  <meta name="author" content="Shelden Rattray">
-  <meta name="theme-color" content="#000000">
-
-  <!-- Open Graph / Facebook -->
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://noise.sheldenrattray.com/">
-  <meta property="og:title" content="NOISE | A beautiful way to work in silence">
-  <meta property="og:description" content="A minimalist, all-black ambient noise generator for deep work, flow state, and restful silence. Features 17 presets and a 10-band frequency sculpt equalizer.">
-  <meta property="og:site_name" content="NOISE">
-
-  <!-- Twitter -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="NOISE | A beautiful way to work in silence">
-  <meta name="twitter:description" content="A minimalist, all-black ambient noise generator for deep work, flow state, and restful silence.">
-
-  <!-- Structured Data (JSON-LD) -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "NOISE | A beautiful way to work in silence",
-    "applicationCategory": "MultimediaApplication",
-    "operatingSystem": "All",
-    "description": "Minimalist all-black ambient noise generator with 17 curated sound presets and a 10-band custom equalizer for deep focus, flow state, and sleep.",
-    "author": {
-      "@type": "Person",
-      "name": "Shelden Rattray"
-    }
-  }
-  </script>
-
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>〰</text></svg>">
-</head>
-<body>
-
-  <!-- =========================================================================
-       INITIAL VIEWPORT (100vh): Center Curve Wave + Time & Timer + Controls
-       Bottom 5% peeking cards hint at scrollable content below
-       ========================================================================= -->
-  <section class="viewport-hero" id="heroViewport">
-    
-    <!-- Top Navigation Bar -->
-    <header class="hero-header">
-      <div class="brand-group">
-        <h1 class="brand-logo">NOISE</h1>
-        <div class="status-indicator">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="statusText">STOPPED</span>
-        </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050507" />
+    <title>Sonus — Minimalist Study Sound & Frequency Environment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Topbar: Sonus wordmark at top-left, Live time marker at top-right -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <a class="wordmark" href="#top" aria-label="Sonus home">sonus<span>.</span></a>
       </div>
 
-      <!-- Time & Timer at Top Right -->
-      <div class="time-timer-group">
-        <!-- Live Real-Time Clock -->
-        <div class="live-clock" id="liveClock" title="Current Time">--:--:--</div>
-
-        <!-- Timer Trigger Pill -->
-        <div class="timer-widget-wrapper">
-          <button id="timerTriggerBtn" class="timer-pill-btn" aria-haspopup="dialog" aria-expanded="false" title="Set Focus or Sleep Timer">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span id="timerBtnLabel">START TIMER</span>
-            <span id="timerPillCountdown" class="pill-countdown" style="display: none;"></span>
-          </button>
-
-          <!-- Timer Selector Popover Dropdown -->
-          <div class="timer-popover" id="timerPopover">
-            <div class="popover-title">FOCUS & SLEEP TIMER</div>
-            <div class="timer-options-grid">
-              <button class="timer-opt-btn" data-minutes="15">15 min</button>
-              <button class="timer-opt-btn" data-minutes="25">25 min (Pomodoro)</button>
-              <button class="timer-opt-btn" data-minutes="30">30 min</button>
-              <button class="timer-opt-btn" data-minutes="45">45 min</button>
-              <button class="timer-opt-btn" data-minutes="60">60 min</button>
-              <button class="timer-opt-btn" data-minutes="90">90 min</button>
-            </div>
-            <div class="timer-popover-footer">
-              <button id="timerStopBtn" class="timer-stop-action" style="display: none;">Cancel Timer</button>
-            </div>
-          </div>
-        </div>
+      <div class="topbar-right">
+        <time class="clock-display" id="clockDisplay" title="Local Time">00:00:00</time>
       </div>
     </header>
 
-    <!-- Centerpiece: Dynamic Frequency Curve Wave + Overlaid Hover Sliders -->
-    <main class="center-stage">
-      <div class="curve-wave-box" id="curveWaveBox">
-        <!-- Main Canvas: Animated frequency response & audio spectrum wave -->
-        <canvas id="vizCanvas" class="curve-canvas"></canvas>
+    <div class="page-shell">
+      <!-- Main Custom Curve Screen Center Stage (Container-free, fades out at edges) -->
+      <section class="curve-center-stage" id="top" aria-label="Interactive Equalizer">
 
-        <!-- Hover Hint Badge -->
-        <div class="curve-hover-indicator" id="curveHoverIndicator">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="4" y1="21" x2="4" y2="14"></line>
-            <line x1="4" y1="10" x2="4" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12" y2="3"></line>
-            <line x1="20" y1="21" x2="20" y2="16"></line>
-            <line x1="20" y1="12" x2="20" y2="3"></line>
-            <line x1="1" y1="14" x2="7" y2="14"></line>
-            <line x1="9" y1="8" x2="15" y2="8"></line>
-            <line x1="17" y1="16" x2="23" y2="16"></line>
+        <!-- The Curve Plot Area (Fadeout edges, borderless, floating directly on dark canvas) -->
+        <div class="eq-plot-wrap" id="eqPlotWrap">
+          <!-- Background Canvas for Audio Spectrum Wave -->
+          <canvas class="eq-backdrop-canvas" id="eqBackdropCanvas"></canvas>
+
+          <!-- Frequency Grid Guide Lines -->
+          <div class="eq-db-grid" aria-hidden="true">
+            <div class="db-line pos-12"><i></i></div>
+            <div class="db-line pos-6"><i></i></div>
+            <div class="db-line zero"><i></i></div>
+            <div class="db-line neg-6"><i></i></div>
+            <div class="db-line neg-12"><i></i></div>
+          </div>
+
+          <!-- SVG Curves -->
+          <svg class="eq-svg" id="eqSvg" viewBox="0 0 1000 360" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="curveFillGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18" />
+                <stop offset="70%" stop-color="#ffffff" stop-opacity="0.03" />
+                <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+              </linearGradient>
+
+              <filter id="neonBlur" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="4" result="blur1" />
+                <feGaussianBlur stdDeviation="10" result="blur2" />
+                <feMerge>
+                  <feMergeNode in="blur2" />
+                  <feMergeNode in="blur1" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            <!-- Translucent fill beneath curve -->
+            <path class="eq-path-fill" id="eqPathFill" d="" />
+            <!-- Glowing monochrome laser paths -->
+            <path class="eq-path-glow" id="eqPathGlow" d="" />
+            <path class="eq-path-core" id="eqPathCore" d="" />
           </svg>
-          <span>HOVER TO SCULPT 10 FREQUENCIES</span>
+
+          <!-- Dynamic Floating Value Tooltip Pill -->
+          <div class="drag-tooltip" id="dragTooltip" aria-hidden="true">
+            <span class="tooltip-band" id="tooltipBand">1 kHz</span>
+            <span class="tooltip-val" id="tooltipVal">+0.0 dB</span>
+          </div>
+
+          <!-- Interactive Frequency Handles / Nodes -->
+          <div class="eq-nodes-layer" id="eqNodesLayer">
+            <!-- Dynamically populated 10 nodes -->
+          </div>
+
+          <div class="interactive-hint" id="interactiveHint">drag points or click anywhere on the spectrum to sculpt frequencies</div>
         </div>
 
-        <!-- OVERLAY: Appears on Hover with 10 Vertical Sliders directly overtop the Curve -->
-        <div class="curve-sliders-overlay" id="curveSlidersOverlay">
-          <!-- Top Overlay Quick Sculpt Bar -->
-          <div class="overlay-quick-actions">
-            <div class="overlay-tag-group">
-              <span class="overlay-badge" id="eqProfileTag">PROFILE: FLAT</span>
-              <span class="overlay-badge" id="eqActiveBandsCount">0 BANDS BOOSTED</span>
-            </div>
-            <div class="overlay-actions-group">
-              <button id="eqFlattenBtn" class="sculpt-chip" title="Reset all 10 bands to 0dB">FLATTEN</button>
-              <button id="eqWarmBtn" class="sculpt-chip" title="Boost lower frequencies">WARM</button>
-              <button id="eqVoiceBtn" class="sculpt-chip" title="Focus speech clarity range">VOICE</button>
-              <button id="eqAirBtn" class="sculpt-chip" title="Lift top frequencies">AIR</button>
-              <button id="eqRandBtn" class="sculpt-chip" title="Randomize band gains">RANDOM</button>
-              <button id="pinSlidersBtn" class="sculpt-chip pin-btn" title="Pin / Lock sliders in view">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+        <!-- Bottom Frequency Axis (Hz) -->
+        <div class="eq-frequency-axis" id="eqFrequencyAxis">
+          <!-- 60, 125, 250, 500, 1k, 2k, 4k, 8k, 12k, 16k -->
+        </div>
+
+      </section>
+
+      <!-- Bottom Controls Underneath: Play Button, Volume & Glass Presets Grid -->
+      <footer class="bottom-dock">
+        <!-- Main Focus Play Button & Glass Volume -->
+        <div class="play-action-wrap glass-panel">
+          <button class="main-focus-btn glass-btn" id="mainFocusBtn" type="button" aria-pressed="false">
+            <div class="btn-ambient-pulse" aria-hidden="true"></div>
+            <div class="btn-content">
+              <span class="btn-icon" id="btnIcon">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path id="playSvgPath" d="M8 5v14l11-7z" />
                 </svg>
-                <span>PIN</span>
+              </span>
+              <span class="btn-caption" id="btnCaption">Start Focus</span>
+            </div>
+          </button>
+
+          <!-- Master Volume Glass Widget -->
+          <div class="volume-widget glass-btn" title="Master Volume">
+            <button class="icon-btn" id="muteToggleBtn" type="button" aria-label="Toggle mute (M)">
+              <svg class="vol-icon" id="volIcon" viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+              </svg>
+            </button>
+            <div class="volume-slider-track">
+              <input type="range" id="masterVolume" min="0" max="100" value="65" aria-label="Volume" />
+              <div class="volume-slider-progress" id="volumeProgress" style="width: 65%;"></div>
+            </div>
+            <span class="volume-text" id="volumeValue">65%</span>
+          </div>
+
+          <div class="shortcut-legend">Press <kbd>Space</kbd> to toggle</div>
+        </div>
+
+        <!-- Curated Presets Container with Glass Buttons -->
+        <div class="presets-container glass-panel">
+          <div class="presets-header">
+            <span class="presets-title">PRESETS</span>
+            <div class="presets-header-right">
+              <button class="flat-reset-btn" id="flatResetBtn" type="button" title="Reset all bands to 0 dB (R)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 12h18M12 3v18"/></svg>
+                <span>Reset Flat</span>
               </button>
             </div>
           </div>
-
-          <!-- 10 Frequency Faders Grid Overlaid Across Canvas -->
-          <div class="overlay-faders-grid" id="eqGrid">
-            <!-- 10 channels (31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz) inserted here -->
+          <div class="preset-pill-grid" id="presetPillGrid">
+            <!-- Rendered via JS as glass buttons -->
           </div>
         </div>
+      </footer>
+
+      <!-- Masonry Grid Information Cards Directly Underneath -->
+      <section class="masonry-cards-section" id="about" aria-label="About Sonus and Acoustics">
+        <div class="masonry-grid">
+          <!-- About the Developer -->
+          <article class="glass-card about-card dev-card">
+            <span class="card-tag">CREATOR NOTE</span>
+            <h2>About the Developer</h2>
+            <div class="card-body">
+              <p>
+                The modern web is perpetually loud. Notifications, intrusive trackers, and cognitive clutter fight constantly for your attention. I built <strong>Sonus</strong> to be the exact opposite: an uncompromised, beautiful sanctuary where you can sit down, put on headphones, and disappear into your work.
+              </p>
+              <p>
+                Every frequency in this generator runs directly in your browser through the native Web Audio API — there are no servers streaming audio files, no subscriptions, and zero analytics tracking your focus. Whether you use deep Brown noise to soothe an ADHD mind, Speech Blocker to mute open-office chatter, or sculpt your own custom 10-band profile, I hope this tool brings quiet clarity to your craft.
+              </p>
+              <div class="dev-author">
+                <span class="dev-name">Shelden Rattray</span>
+                <span class="dev-role">Creator & Developer</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Frequently Asked Questions -->
+          <article class="glass-card about-card faq-card" id="faq">
+            <span class="card-tag">FREQUENTLY ASKED</span>
+            <h2>Frequently Asked Questions</h2>
+            <div class="faq-list">
+              <details class="faq-item" open>
+                <summary class="faq-question">
+                  <span>What is the difference between White, Pink, and Brown noise?</span>
+                  <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                  <p>White noise has equal spectral power across all frequencies (similar to crisp TV static). Pink noise drops 3 dB per octave, mimicking natural acoustic textures like rain or waterfalls. Brown noise drops 6 dB per octave, delivering a deep, warm low-end rumble like rolling ocean surf.</p>
+                </div>
+              </details>
+
+              <details class="faq-item">
+                <summary class="faq-question">
+                  <span>How does ambient noise help with ADHD and concentration?</span>
+                  <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                  <p>Through a neurological phenomenon known as <em>stochastic resonance</em>, moderate non-intrusive sound adds optimal auditory stimulation to the nervous system. This raises focus signals above internal distraction thresholds, helping people with ADHD or racing thoughts enter deep flow states.</p>
+                </div>
+              </details>
+
+              <details class="faq-item">
+                <summary class="faq-question">
+                  <span>Can Sonus help mask tinnitus or hyperacusis?</span>
+                  <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                  <p>Yes. Acoustic sound enrichment is a clinical mainstay for tinnitus management. By adjusting the 10-band equalizer to envelop or soften the pitch of your ringing, you reduce the contrast between the phantom sound and quiet environments, making it easier for the auditory cortex to ignore it.</p>
+                </div>
+              </details>
+
+              <details class="faq-item">
+                <summary class="faq-question">
+                  <span>Is any audio streamed or user data collected?</span>
+                  <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                  <p>None whatsoever. Every frequency wave is calculated procedurally on-the-fly directly inside your browser using the native Web Audio API. There are no audio streams, zero tracking cookies, and it functions completely offline without internet access.</p>
+                </div>
+              </details>
+
+              <details class="faq-item">
+                <summary class="faq-question">
+                  <span>Which preset works best for blocking speech and office chatter?</span>
+                  <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                  <p>The <strong>Speech Blocker</strong> preset is engineered to gently accentuate the 250 Hz to 4 kHz range where human consonants and intelligibility live. Blending this profile with Brown or Pink noise obscures spoken words into unintelligible ambient texture.</p>
+                </div>
+              </details>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Bottom Center Creator Signature Badge -->
+      <div class="bottom-signature-wrap">
+        <a href="https://www.sheldenr.dev" target="_blank" rel="noopener noreferrer" title="Shelden Rattray" class="signature-link">
+          <img src="assets/signature.svg" alt="Shelden Rattray signature" class="signature-badge" />
+        </a>
       </div>
-
-      <!-- Master Playback Deck -->
-      <div class="master-bar">
-        <div class="master-left">
-          <button id="playBtn" class="master-play-btn" aria-label="Play or Pause Sound">
-            <svg id="playIcon" viewBox="0 0 24 24" width="14" height="14">
-              <polygon points="5 3 19 12 5 21 5 3" fill="currentColor"></polygon>
-            </svg>
-            <svg id="pauseIcon" viewBox="0 0 24 24" width="14" height="14" style="display: none;">
-              <rect x="6" y="4" width="4" height="16" fill="currentColor"></rect>
-              <rect x="14" y="4" width="4" height="16" fill="currentColor"></rect>
-            </svg>
-            <span id="playBtnText">PLAY</span>
-          </button>
-
-          <div class="active-preset-badge">
-            PRESET: <span id="currentPresetName">Brown</span>
-          </div>
-        </div>
-
-        <!-- Volume Control -->
-        <div class="master-right">
-          <button id="muteBtn" class="vol-btn" aria-label="Mute or Unmute">
-            <svg id="volIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-            </svg>
-            <svg id="muteIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
-              <line x1="1" y1="1" x2="23" y2="23"></line>
-              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-            </svg>
-          </button>
-          <input type="range" id="volumeSlider" class="vol-slider" min="0" max="100" value="70" aria-label="Master Volume">
-          <span id="volumeValue" class="vol-text">70%</span>
-        </div>
-      </div>
-
-      <!-- Presets Selector Strip (17 Presets) -->
-      <div class="presets-shelf" aria-label="Sound Presets">
-        <div class="presets-scroll-track" id="presetsGrid">
-          <button class="preset-pill active" data-preset="Brown">
-            <span class="preset-title">Brown</span>
-            <span class="preset-sub">1/f² Deep waterfall</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Pink">
-            <span class="preset-title">Pink</span>
-            <span class="preset-sub">1/f Balanced rain</span>
-          </button>
-
-          <button class="preset-pill" data-preset="White">
-            <span class="preset-title">White</span>
-            <span class="preset-sub">Flat crisp hiss</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Grey">
-            <span class="preset-title">Grey</span>
-            <span class="preset-sub">Equal loudness</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Infra">
-            <span class="preset-title">Infra</span>
-            <span class="preset-sub">Sub-bass &lt;60Hz</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Ultra">
-            <span class="preset-title">Ultra</span>
-            <span class="preset-sub">Shimmer &gt;8kHz</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Around 60Hz">
-            <span class="preset-title">Around 60Hz</span>
-            <span class="preset-sub">60Hz mains hum</span>
-          </button>
-
-          <button class="preset-pill" data-preset="125Hz">
-            <span class="preset-title">125Hz</span>
-            <span class="preset-sub">Low bass tone</span>
-          </button>
-
-          <button class="preset-pill" data-preset="250Hz">
-            <span class="preset-title">250Hz</span>
-            <span class="preset-sub">Warm low-mid</span>
-          </button>
-
-          <button class="preset-pill" data-preset="500Hz">
-            <span class="preset-title">500Hz</span>
-            <span class="preset-sub">Centrum body</span>
-          </button>
-
-          <button class="preset-pill" data-preset="1kHz">
-            <span class="preset-title">1kHz</span>
-            <span class="preset-sub">Telephone mid</span>
-          </button>
-
-          <button class="preset-pill" data-preset="2kHz">
-            <span class="preset-title">2kHz</span>
-            <span class="preset-sub">Clarity presence</span>
-          </button>
-
-          <button class="preset-pill" data-preset="4kHz">
-            <span class="preset-title">4kHz</span>
-            <span class="preset-sub">Crisp canal peak</span>
-          </button>
-
-          <button class="preset-pill" data-preset="8kHz">
-            <span class="preset-title">8kHz</span>
-            <span class="preset-sub">Treble brilliance</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Speech Blocker">
-            <span class="preset-title">Speech Blocker</span>
-            <span class="preset-sub">Voice privacy mask</span>
-          </button>
-
-          <button class="preset-pill" data-preset="Ear Massage">
-            <span class="preset-title">Ear Massage</span>
-            <span class="preset-sub">Binaural sweep</span>
-          </button>
-
-          <button class="preset-pill surprise-pill" data-preset="℗ Surprise!">
-            <span class="preset-title">℗ Surprise!</span>
-            <span class="preset-sub" id="surpriseDesc">Generative</span>
-          </button>
-        </div>
-      </div>
-    </main>
-
-    <!-- Bottom 5% Peeking Cards Anchor: Informs user they can scroll down -->
-    <div class="peeking-cards-anchor">
-      <a href="#cardsSection" class="peeking-card-tab" title="Scroll to FAQ">
-        <span class="tab-icon">❓</span>
-        <span class="tab-title">FAQ</span>
-      </a>
-      <a href="#cardsSection" class="peeking-card-tab" title="Scroll to About Developer">
-        <span class="tab-icon">✍</span>
-        <span class="tab-title">ABOUT DEV</span>
-      </a>
-      <a href="#cardsSection" class="peeking-card-tab" title="Scroll to About Site">
-        <span class="tab-icon">〰</span>
-        <span class="tab-title">ABOUT SITE</span>
-      </a>
-      <a href="#cardsSection" class="peeking-card-tab" title="Scroll to Settings & Shortcuts">
-        <span class="tab-icon">⚙</span>
-        <span class="tab-title">SETTINGS</span>
-      </a>
-    </div>
-  </section>
-
-  <!-- =========================================================================
-       SCROLLABLE INFO SECTION: The 4 Cards (FAQ, About Dev, About Site, Settings)
-       ========================================================================= -->
-  <section class="cards-section" id="cardsSection">
-    
-    <!-- Zen Reflection Banner (Accompanying the Cards) -->
-    <div class="zen-quote-banner" id="quoteCard">
-      <div class="quote-glyph" aria-hidden="true">“</div>
-      <blockquote class="quote-text-group">
-        <p class="quote-phrase" id="quoteText">The quieter you become, the more you are able to hear.</p>
-        <footer class="quote-cite" id="quoteAuthor">— Ram Dass</footer>
-      </blockquote>
-      <button id="nextQuoteBtn" class="quote-cycle-btn" aria-label="Next quote" title="Cycle reflection">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-      </button>
-    </div>
-
-    <!-- 4 Cards Grid -->
-    <div class="four-cards-grid">
-      
-      <!-- Card 1: Frequently Asked Questions -->
-      <article class="info-card" id="cardFaq">
-        <div class="card-header">
-          <div class="card-badge-row">
-            <span class="card-pill">ACOUSTICS</span>
-            <span class="card-pill-sub">SCIENCE & ANSWERS</span>
-          </div>
-          <h2 class="card-headline">Frequently Asked Questions</h2>
-        </div>
-
-        <div class="card-body">
-          <div class="faq-accordion-list">
-            <details class="faq-item">
-              <summary class="faq-summary">
-                <span>How do Brown, Pink, White, and Grey noise differ?</span>
-                <svg class="faq-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </summary>
-              <div class="faq-details">
-                <p><strong>Brown noise</strong> has power density inversely proportional to frequency squared (1/f²), producing deep, waterfall-like rumble. <strong>Pink noise</strong> decreases by 3dB per octave (1/f), mimicking natural rain and rustling wind. <strong>White noise</strong> distributes energy evenly across all frequencies (flat 0dB/octave), while <strong>Grey noise</strong> is filtered through an inverted psychoacoustic equal-loudness curve so every frequency sounds equally loud to human ears.</p>
-              </div>
-            </details>
-
-            <details class="faq-item">
-              <summary class="faq-summary">
-                <span>What is "Speech Blocker" and how does it mask chatter?</span>
-                <svg class="faq-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </summary>
-              <div class="faq-details">
-                <p>Human speech intelligibility lives primarily within the 250Hz – 3.8kHz frequency band (formants and sibilants). <em>Speech Blocker</em> shapes acoustic energy into this critical range with conversational roll-offs, raising your Speech Reception Threshold so nearby speech becomes an unintelligible blur without causing auditory fatigue.</p>
-              </div>
-            </details>
-
-            <details class="faq-item">
-              <summary class="faq-summary">
-                <span>How do I customize the 10 frequency sliders?</span>
-                <svg class="faq-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </summary>
-              <div class="faq-details">
-                <p>Hover over the frequency curve wave on the main screen to reveal the 10-band equalizer sliders. Drag any band up (to +24dB) or down (to -24dB). An integrated studio DynamicsCompressor safety limiter ensures boosts never produce digital distortion or clipping.</p>
-              </div>
-            </details>
-
-            <details class="faq-item">
-              <summary class="faq-summary">
-                <span>What are Infra, Ultra, and Ear Massage?</span>
-                <svg class="faq-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </summary>
-              <div class="faq-details">
-                <p><strong>Infra</strong> cuts off frequencies above 60Hz for deep seismic rumble. <strong>Ultra</strong> isolates frequencies above 8kHz for light air. <strong>Ear Massage</strong> uses dual out-of-phase low-frequency oscillators (LFOs) to sweep filters across both ears for a soothing binaural wave.</p>
-              </div>
-            </details>
-          </div>
-        </div>
-      </article>
-
-      <!-- Card 2: About the Developer -->
-      <article class="info-card" id="cardDev">
-        <div class="card-header">
-          <div class="card-badge-row">
-            <span class="card-pill">CREATOR</span>
-            <span class="card-pill-sub">CRAFT & PURPOSE</span>
-          </div>
-          <h2 class="card-headline">About the Developer</h2>
-        </div>
-
-        <div class="card-body dev-note-body">
-          <p>
-            The modern web is perpetually loud. Notifications, intrusive trackers, cookie walls, and cognitive clutter fight constantly for your attention. I built <strong>NOISE</strong> as an uncompromised, beautiful sanctuary where you can sit down, put on headphones, and disappear into your work.
-          </p>
-          <p>
-            Every acoustic texture is computed natively in your browser using pure mathematics and the Web Audio API — there are no servers streaming audio, no subscriptions, and zero analytics tracking your focus. Whether you need deep <em>Brown noise</em> to calm an ADHD mind, <em>Speech Blocker</em> to mute open-office chatter, or sculpt your own 10-band frequency profile, I hope this tool brings quiet clarity to your craft.
-          </p>
-
-          <div class="signature-block">
-            <img src="assets/signature.svg" alt="Shelden Rattray Signature" class="dev-sig-img" width="140" height="70">
-            <div class="dev-byline">
-              <span class="dev-author">Shelden Rattray</span>
-              <span class="dev-role">Developer & Designer</span>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <!-- Card 3: About the Site -->
-      <article class="info-card" id="cardSite">
-        <div class="card-header">
-          <div class="card-badge-row">
-            <span class="card-pill">PHILOSOPHY</span>
-            <span class="card-pill-sub">A BEAUTIFUL WAY TO WORK</span>
-          </div>
-          <h2 class="card-headline">About the Site</h2>
-        </div>
-
-        <div class="card-body">
-          <p>
-            <strong>NOISE</strong> is an all-black ambient sound generator created specifically for deep work, flow state, meditation, and restful sleep. It bridges acoustic psychoacoustics with minimalist digital design.
-          </p>
-          <ul class="features-checklist">
-            <li><strong>100% Client-Side Synthesis:</strong> Math-based continuous buffer audio with seamless zero-click looping.</li>
-            <li><strong>Zero Tracking & Zero Ads:</strong> No cookies, no third-party trackers, no accounts. 100% private and offline-capable.</li>
-            <li><strong>17 Curated Sound Presets:</strong> Spanning traditional noise spectrums, targeted speech blockers, and generative surprises.</li>
-            <li><strong>Pro-Grade Parametric Equalizer:</strong> 10 discrete octave bands from 31Hz to 16kHz with dynamic safety brickwall limiter.</li>
-          </ul>
-        </div>
-      </article>
-
-      <!-- Card 4: Settings & Preferences -->
-      <article class="info-card" id="cardSettings">
-        <div class="card-header">
-          <div class="card-badge-row">
-            <span class="card-pill">PREFERENCES</span>
-            <span class="card-pill-sub">CONTROLS & SHORTCUTS</span>
-          </div>
-          <h2 class="card-headline">Settings & Shortcuts</h2>
-        </div>
-
-        <div class="card-body">
-          <div class="settings-control-group">
-            <div class="setting-row">
-              <div class="setting-label-col">
-                <span class="setting-name">Safety Audio Limiter</span>
-                <span class="setting-desc">Dynamics compressor preventing clipping on heavy boosts</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="settingLimiter" checked>
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-
-            <div class="setting-row">
-              <div class="setting-label-col">
-                <span class="setting-name">Clock Format</span>
-                <span class="setting-desc">Switch between 12-hour (AM/PM) and 24-hour time</span>
-              </div>
-              <button id="clockFormatBtn" class="setting-action-btn">12-HOUR</button>
-            </div>
-          </div>
-
-          <div class="shortcuts-legend">
-            <div class="shortcuts-legend-title">KEYBOARD SHORTCUTS</div>
-            <div class="shortcuts-grid">
-              <div class="shortcut-pair"><kbd>Space</kbd> <span>Play / Stop Audio</span></div>
-              <div class="shortcut-pair"><kbd>M</kbd> <span>Mute / Unmute</span></div>
-              <div class="shortcut-pair"><kbd>E</kbd> <span>Toggle EQ Sliders</span></div>
-              <div class="shortcut-pair"><kbd>R</kbd> <span>Reset EQ to 0dB</span></div>
-              <div class="shortcut-pair"><kbd>S</kbd> <span>Trigger ℗ Surprise!</span></div>
-            </div>
-          </div>
-        </div>
-      </article>
 
     </div>
 
-    <!-- Page Footer -->
-    <footer class="site-footer">
-      <div class="footer-links">
-        <span>NOISE | A beautiful way to work in silence</span>
-        <span>•</span>
-        <span>Pure Web Audio API</span>
-        <span>•</span>
-        <span>Zero Latency</span>
-      </div>
-      <div class="footer-back-to-top">
-        <a href="#heroViewport" class="top-anchor-btn">↑ BACK TO SOUND</a>
-      </div>
-    </footer>
-  </section>
-
-  <script src="js/audio.js"></script>
-  <script src="js/visualizer.js"></script>
-  <script src="js/app.js"></script>
-</body>
+    <script src="app.js"></script>
+  </body>
 </html>
