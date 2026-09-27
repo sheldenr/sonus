@@ -430,6 +430,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // =========================================================================
+  // 9. Zen Quotes Rotation
+  // =========================================================================
+  const quotes = [
+    { text: "The quieter you become, the more you are able to hear.", author: "— Ram Dass" },
+    { text: "Silence is not the absence of sound, but the space where focus begins.", author: "— Reflection" },
+    { text: "Music is the silence between the notes.", author: "— Claude Debussy" },
+    { text: "Silence is a source of great strength.", author: "— Lao Tzu" },
+    { text: "Muddy water is best cleared by leaving it alone.", author: "— Alan Watts" },
+    { text: "After silence, that which comes nearest to expressing the inexpressible is music.", author: "— Aldous Huxley" },
+    { text: "In the midst of movement and chaos, keep stillness inside of you.", author: "— Deepak Chopra" },
+    { text: "There is a deep peace in doing one thing with all your heart in absolute stillness.", author: "— Anonymous" }
+  ];
+
+  const quoteText = document.getElementById('quoteText');
+  const quoteAuthor = document.getElementById('quoteAuthor');
+  const nextQuoteBtn = document.getElementById('nextQuoteBtn');
+
+  let currentQuoteIndex = 0;
+
+  function cycleQuote() {
+    if (!quoteText || !quoteAuthor) return;
+    quoteText.style.opacity = '0';
+    quoteAuthor.style.opacity = '0';
+    quoteText.style.transform = 'translateY(4px)';
+
+    setTimeout(() => {
+      currentQuoteIndex = (currentQuoteIndex + 1) % quotes.length;
+      quoteText.textContent = quotes[currentQuoteIndex].text;
+      quoteAuthor.textContent = quotes[currentQuoteIndex].author;
+      quoteText.style.opacity = '1';
+      quoteAuthor.style.opacity = '1';
+      quoteText.style.transform = 'translateY(0)';
+    }, 200);
+  }
+
+  if (nextQuoteBtn) {
+    nextQuoteBtn.addEventListener('click', cycleQuote);
+  }
+
   // Initialize UI
   buildEqualizerUI();
   visualizer.clear();
