@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOISE • Minimal Ambient Sound Generator</title>
+  <meta name="description" content="Minimalist all-black ambient noise generator with curated presets and 10-band custom equalizer.">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>〰</text></svg>">
+</head>
+<body>
+
+  <main class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <h1 class="brand-title">NOISE</h1>
+        <div class="status-badge">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">STOPPED</span>
+        </div>
+      </div>
+
+      <div class="header-meta">
+        <div class="timer-pill">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <select id="timerSelect" class="timer-select" title="Auto-stop Sleep Timer">
+            <option value="0">Timer: Off</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60">60 min</option>
+            <option value="90">90 min</option>
+          </select>
+          <span id="timerCountdown" style="display: none; font-size: 0.72rem; color: var(--text-primary); font-family: var(--font-mono);"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Visualizer Canvas -->
+    <div class="visualizer-wrapper">
+      <div class="visualizer-toolbar">
+        <button id="vizModeSpectrum" class="viz-btn active" title="Frequency Spectrum View">SPECTRUM</button>
+        <button id="vizModeWave" class="viz-btn" title="Oscilloscope Waveform View">WAVE</button>
+      </div>
+      <canvas id="vizCanvas" class="visualizer-canvas"></canvas>
+    </div>
+
+    <!-- Master Control Deck -->
+    <section class="master-deck" aria-label="Playback and Volume Controls">
+      <div class="master-playback">
+        <button id="playBtn" class="play-button" aria-label="Play or Pause Noise">
+          <svg id="playIcon" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <svg id="pauseIcon" viewBox="0 0 24 24" style="display: none;">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          <span id="playBtnText">PLAY</span>
+        </button>
+
+        <div class="active-preset-tag">
+          CURRENT: <span id="currentPresetName">Brown</span>
+        </div>
+      </div>
+
+      <div class="master-volume-box">
+        <button id="muteBtn" class="volume-icon-btn" aria-label="Mute or Unmute">
+          <svg id="volIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="muteIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+            <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+          </svg>
+        </button>
+        <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="70" aria-label="Master Volume">
+        <span id="volumeValue" class="volume-value">70%</span>
+      </div>
+    </section>
+
+    <!-- Presets Section -->
+    <section class="section-container" aria-label="Noise Presets">
+      <div class="section-header">
+        <h2 class="section-title">Presets</h2>
+        <span class="section-hint">Select a sound signature</span>
+      </div>
+
+      <div class="presets-grid" id="presetsGrid">
+        <!-- Preset items dynamically populated or pre-rendered -->
+        <button class="preset-btn active" data-preset="Brown">
+          <span class="preset-name">Brown</span>
+          <span class="preset-desc">1/f² Deep waterfall</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Pink">
+          <span class="preset-name">Pink</span>
+          <span class="preset-desc">1/f Balanced rain</span>
+        </button>
+
+        <button class="preset-btn" data-preset="White">
+          <span class="preset-name">White</span>
+          <span class="preset-desc">Flat crisp hiss</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Grey">
+          <span class="preset-name">Grey</span>
+          <span class="preset-desc">Equal loudness curve</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Infra">
+          <span class="preset-name">Infra</span>
+          <span class="preset-desc">Sub-bass rumble &lt;60Hz</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Ultra">
+          <span class="preset-name">Ultra</span>
+          <span class="preset-desc">Air & shimmer &gt;8kHz</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Around 60Hz">
+          <span class="preset-name">Around 60Hz</span>
+          <span class="preset-desc">Mains hum & resonance</span>
+        </button>
+
+        <button class="preset-btn" data-preset="125Hz">
+          <span class="preset-name">125Hz</span>
+          <span class="preset-desc">Low bass resonance</span>
+        </button>
+
+        <button class="preset-btn" data-preset="250Hz">
+          <span class="preset-name">250Hz</span>
+          <span class="preset-desc">Warm low-mid band</span>
+        </button>
+
+        <button class="preset-btn" data-preset="500Hz">
+          <span class="preset-name">500Hz</span>
+          <span class="preset-desc">Centrum body tone</span>
+        </button>
+
+        <button class="preset-btn" data-preset="1kHz">
+          <span class="preset-name">1kHz</span>
+          <span class="preset-desc">Reference telephone mid</span>
+        </button>
+
+        <button class="preset-btn" data-preset="2kHz">
+          <span class="preset-name">2kHz</span>
+          <span class="preset-desc">Auditory clarity zone</span>
+        </button>
+
+        <button class="preset-btn" data-preset="4kHz">
+          <span class="preset-name">4kHz</span>
+          <span class="preset-desc">Crisp ear canal peak</span>
+        </button>
+
+        <button class="preset-btn" data-preset="8kHz">
+          <span class="preset-name">8kHz</span>
+          <span class="preset-desc">Treble brilliance</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Speech Blocker">
+          <span class="preset-name">Speech Blocker</span>
+          <span class="preset-desc">Voice masking privacy</span>
+        </button>
+
+        <button class="preset-btn" data-preset="Ear Massage">
+          <span class="preset-name">Ear Massage</span>
+          <span class="preset-desc">Binaural moving sweep</span>
+        </button>
+
+        <button class="preset-btn surprise-btn" data-preset="℗ Surprise!">
+          <span class="preset-name">℗ Surprise!</span>
+          <span class="preset-desc" id="surpriseDesc">Generative texture</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 10-Band Graphic Equalizer -->
+    <section class="section-container" aria-label="10-Band Custom Equalizer">
+      <div class="section-header">
+        <h2 class="section-title">Custom Frequency Equalizer</h2>
+        <span class="section-hint">Selectively increase or cut 10 frequency ranges (-24dB to +24dB)</span>
+      </div>
+
+      <div class="eq-container">
+        <div class="eq-controls-bar">
+          <div class="eq-badges">
+            <span class="eq-mode-tag" id="eqProfileTag">PROFILE: FLAT</span>
+            <span class="eq-mode-tag" id="eqActiveBandsCount">0 BANDS BOOSTED</span>
+          </div>
+
+          <div class="eq-actions">
+            <button id="eqFlattenBtn" class="eq-action-btn" title="Reset all 10 bands to 0dB">FLATTEN</button>
+            <button id="eqWarmBtn" class="eq-action-btn" title="Boost lower frequencies">WARM</button>
+            <button id="eqVoiceBtn" class="eq-action-btn" title="Focus speech clarity range">VOICE</button>
+            <button id="eqAirBtn" class="eq-action-btn" title="Lift top frequencies">AIR</button>
+            <button id="eqRandBtn" class="eq-action-btn" title="Randomize band gains">RANDOM</button>
+          </div>
+        </div>
+
+        <!-- 10 Frequency Faders Grid -->
+        <div class="eq-grid" id="eqGrid">
+          <!-- 10 Channels inserted here: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="shortcuts-bar">
+        <div class="shortcut-item"><kbd>Space</kbd> Play / Pause</div>
+        <div class="shortcut-item"><kbd>M</kbd> Mute</div>
+        <div class="shortcut-item"><kbd>R</kbd> Reset EQ</div>
+        <div class="shortcut-item"><kbd>S</kbd> Surprise</div>
+      </div>
+
+      <div class="footer-copy">
+        Pure Web Audio API • 100% Client-side
+      </div>
+    </footer>
+  </main>
+
+  <script src="js/audio.js"></script>
+  <script src="js/visualizer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
