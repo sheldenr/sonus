@@ -1,20 +1,14 @@
 /**
- * Minimalist Noise Generator - Main Application Controller
+ * NOISE • Main Application Controller
+ * Handles audio engine, visualizer, live clock, timer popover, hover sliders,
+ * presets, zen quotes, and preferences.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Instantiate Engine
+  // 1. Initialize Engine & Visualizer
   const engine = new window.NoiseEngine();
   const canvas = document.getElementById('vizCanvas');
-
-  // Callback to sync sliders when user drags nodes directly on the curve canvas
-  const visualizer = new window.AudioVisualizer(canvas, engine, (bandIndex, dbValue) => {
-    if (sliderElements[bandIndex]) {
-      sliderElements[bandIndex].value = dbValue;
-      updateBandUI(bandIndex, dbValue);
-      checkEqStatus();
-    }
-  });
+  const visualizer = new window.AudioVisualizer(canvas, engine);
 
   // UI Elements
   const playBtn = document.getElementById('playBtn');
@@ -37,8 +31,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const eqActiveBandsCount = document.getElementById('eqActiveBandsCount');
   const surpriseDesc = document.getElementById('surpriseDesc');
 
-  const timerSelect = document.getElementById('timerSelect');
-  const timerCountdown = document.getElementById('timerCountdown');
+  const curveWaveBox = document.getElementById('curveWaveBox');
+  const pinSlidersBtn = document.getElementById('pinSlidersBtn');
+
+  // Clock & Timer Elements
+  const liveClock = document.getElementById('liveClock');
+  const timerTriggerBtn = document.getElementById('timerTriggerBtn');
+  const timerBtnLabel = document.getElementById('timerBtnLabel');
+  const timerPillCountdown = document.getElementById('timerPillCountdown');
+  const timerPopover = document.getElementById('timerPopover');
+  const timerStopBtn = document.getElementById('timerStopBtn');
+  const clockFormatBtn = document.getElementById('clockFormatBtn');
+  const settingLimiter = document.getElementById('settingLimiter');
 
   // EQ Quick Action Buttons
   const eqFlattenBtn = document.getElementById('eqFlattenBtn');
@@ -51,8 +55,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let previousVolume = 70;
   let timerInterval = null;
   let timerSecondsRemaining = 0;
+  let is24HourClock = false;
+  let isSlidersPinned = false;
 
-  // Band Frequency Labels
+  // Band Frequency Definitions (10 Bands)
   const eqFrequencies = [
     { hz: 31, label: '31Hz' },
     { hz: 62, label: '62Hz' },
@@ -71,7 +77,114 @@ document.addEventListener('DOMContentLoaded', () => {
   const channelContainers = [];
 
   // =========================================================================
-  // 1. Build 10-Band Equalizer UI
+  // 1. Live Real-Time Clock
+  // =========================================================================
+  function updateClock() {
+    const now = new Date();
+    if (is24HourClock) {
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      liveClock.textContent = `${h}:${m}:${s}`;
+    } else {
+      let hours = now.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      liveClock.textContent = `${hours}:${m}:${s} ${ampm}`;
+    }
+  }
+
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  if (clockFormatBtn) {
+    clockFormatBtn.addEventListener('click', () => {
+      is24HourClock = !is24HourClock;
+      clockFormatBtn.textContent = is24HourClock ? '24-HOUR' : '12-HOUR';
+      updateClock();
+    });
+  }
+
+  // =========================================================================
+  // 2. Timer Popover & Countdown
+  // =========================================================================
+  timerTriggerBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = timerPopover.classList.toggle('open');
+    timerTriggerBtn.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!timerPopover.contains(e.target) && !timerTriggerBtn.contains(e.target)) {
+      timerPopover.classList.remove('open');
+      timerTriggerBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  const timerOptBtns = timerPopover.querySelectorAll('.timer-opt-btn');
+  timerOptBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const minutes = parseInt(btn.dataset.minutes, 10);
+      startTimer(minutes);
+      timerPopover.classList.remove('open');
+      timerTriggerBtn.setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  function startTimer(minutes) {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    timerSecondsRemaining = minutes * 60;
+    updateTimerDisplay();
+
+    timerTriggerBtn.classList.add('active-timer');
+    timerBtnLabel.style.display = 'none';
+    timerPillCountdown.style.display = 'inline-block';
+    timerStopBtn.style.display = 'block';
+
+    timerInterval = setInterval(() => {
+      timerSecondsRemaining--;
+      if (timerSecondsRemaining <= 0) {
+        cancelTimer();
+        stopPlayback();
+      } else {
+        updateTimerDisplay();
+      }
+    }, 1000);
+  }
+
+  function cancelTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    timerSecondsRemaining = 0;
+    timerTriggerBtn.classList.remove('active-timer');
+    timerBtnLabel.style.display = 'inline-block';
+    timerBtnLabel.textContent = 'START TIMER';
+    timerPillCountdown.style.display = 'none';
+    timerStopBtn.style.display = 'none';
+  }
+
+  timerStopBtn.addEventListener('click', () => {
+    cancelTimer();
+    timerPopover.classList.remove('open');
+  });
+
+  function updateTimerDisplay() {
+    const m = Math.floor(timerSecondsRemaining / 60);
+    const s = timerSecondsRemaining % 60;
+    timerPillCountdown.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  // =========================================================================
+  // 3. Build 10-Band Equalizer Sliders (Overlaid on Curve Wave)
   // =========================================================================
   function buildEqualizerUI() {
     eqGrid.innerHTML = '';
@@ -102,7 +215,6 @@ document.addEventListener('DOMContentLoaded', () => {
       slider.dataset.index = index;
       slider.setAttribute('aria-label', `EQ ${freq.label} level`);
 
-      // Slider event
       slider.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         updateBandUI(index, val);
@@ -191,10 +303,19 @@ document.addEventListener('DOMContentLoaded', () => {
     eqActiveBandsCount.textContent = `${boostedCount} ${boostedCount === 1 ? 'BAND' : 'BANDS'} BOOSTED`;
   }
 
+  // Pin Sliders Toggle (Allows keeping sliders visible on mobile/touch or on demand)
+  if (pinSlidersBtn) {
+    pinSlidersBtn.addEventListener('click', () => {
+      isSlidersPinned = !isSlidersPinned;
+      curveWaveBox.classList.toggle('pinned', isSlidersPinned);
+      pinSlidersBtn.classList.toggle('pinned', isSlidersPinned);
+    });
+  }
+
   // =========================================================================
-  // 2. Preset Switching
+  // 4. Presets Switching (All 17 Presets)
   // =========================================================================
-  const presetButtons = presetsGrid.querySelectorAll('.preset-btn');
+  const presetButtons = presetsGrid.querySelectorAll('.preset-pill');
 
   function setActivePreset(presetName) {
     presetButtons.forEach(btn => {
@@ -207,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     currentPresetName.textContent = presetName;
 
-    // Trigger audio switch
     if (engine.isPlaying) {
       engine.play(presetName);
     } else {
@@ -228,7 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const presetName = btn.dataset.preset;
       setActivePreset(presetName);
 
-      // If audio is currently stopped, clicking a preset starts playing immediately
       if (!engine.isPlaying) {
         startPlayback();
       }
@@ -236,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 3. Playback Controls & Status
+  // 5. Playback Controls & Status
   // =========================================================================
   function startPlayback() {
     engine.play(engine.currentPreset);
@@ -279,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
   playBtn.addEventListener('click', togglePlayback);
 
   // =========================================================================
-  // 4. Volume & Mute Controls
+  // 6. Volume & Mute Controls
   // =========================================================================
   function updateVolume(val) {
     const norm = val / 100;
@@ -313,44 +432,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 6. Sleep Timer Logic
-  // =========================================================================
-  timerSelect.addEventListener('change', () => {
-    const minutes = parseInt(timerSelect.value, 10);
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-
-    if (minutes > 0) {
-      timerSecondsRemaining = minutes * 60;
-      updateTimerDisplay();
-      timerCountdown.style.display = 'inline-block';
-
-      timerInterval = setInterval(() => {
-        timerSecondsRemaining--;
-        if (timerSecondsRemaining <= 0) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-          timerCountdown.style.display = 'none';
-          timerSelect.value = '0';
-          stopPlayback();
-        } else {
-          updateTimerDisplay();
-        }
-      }, 1000);
-    } else {
-      timerCountdown.style.display = 'none';
-    }
-  });
-
-  function updateTimerDisplay() {
-    const m = Math.floor(timerSecondsRemaining / 60);
-    const s = timerSecondsRemaining % 60;
-    timerCountdown.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
-  }
-
-  // =========================================================================
   // 7. Equalizer Quick Action Buttons
   // =========================================================================
   eqFlattenBtn.addEventListener('click', () => {
@@ -370,7 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   eqRandBtn.addEventListener('click', () => {
-    // Generate smooth randomized curve
     const randBands = [];
     let prev = (Math.random() * 16) - 8;
     for (let i = 0; i < 10; i++) {
@@ -382,29 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 8. Global Keyboard Shortcuts
-  // =========================================================================
-  window.addEventListener('keydown', (e) => {
-    // Ignore keystrokes if an input or select is focused
-    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-      if (e.code === 'Space') return; // allow slider adjustment
-    }
-
-    if (e.code === 'Space') {
-      e.preventDefault();
-      togglePlayback();
-    } else if (e.key === 'm' || e.key === 'M') {
-      muteBtn.click();
-    } else if (e.key === 'r' || e.key === 'R') {
-      eqFlattenBtn.click();
-    } else if (e.key === 's' || e.key === 'S') {
-      setActivePreset('℗ Surprise!');
-      if (!engine.isPlaying) startPlayback();
-    }
-  });
-
-  // =========================================================================
-  // 9. Zen Quotes Rotation
+  // 8. Zen Quotes Rotation
   // =========================================================================
   const quotes = [
     { text: "The quieter you become, the more you are able to hear.", author: "— Ram Dass" },
@@ -442,6 +500,53 @@ document.addEventListener('DOMContentLoaded', () => {
   if (nextQuoteBtn) {
     nextQuoteBtn.addEventListener('click', cycleQuote);
   }
+
+  // =========================================================================
+  // 9. Settings Card Controls
+  // =========================================================================
+  if (settingLimiter) {
+    settingLimiter.addEventListener('change', (e) => {
+      if (engine.limiter && engine.ctx) {
+        const isEnabled = e.target.checked;
+        engine.limiter.ratio.setTargetAtTime(isEnabled ? 14.0 : 1.0, engine.ctx.currentTime, 0.05);
+      }
+    });
+  }
+
+  // =========================================================================
+  // 10. Global Keyboard Shortcuts
+  // =========================================================================
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+      if (e.code === 'Space') return;
+    }
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      togglePlayback();
+    } else if (e.key === 'm' || e.key === 'M') {
+      muteBtn.click();
+    } else if (e.key === 'e' || e.key === 'E') {
+      if (pinSlidersBtn) pinSlidersBtn.click();
+    } else if (e.key === 'r' || e.key === 'R') {
+      eqFlattenBtn.click();
+    } else if (e.key === 's' || e.key === 'S') {
+      setActivePreset('℗ Surprise!');
+      if (!engine.isPlaying) startPlayback();
+    }
+  });
+
+  // Smooth scroll links for peeking card tabs
+  const peekingTabs = document.querySelectorAll('.peeking-card-tab');
+  peekingTabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.getElementById('cardsSection');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
 
   // Initialize UI
   buildEqualizerUI();
