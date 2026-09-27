@@ -1,28 +1,33 @@
 /**
- * Minimalist Noise Generator - Audio Visualizer
- * High-precision segmented LED VU meter spectrum analyzer matching pro hardware aesthetics.
+ * Minimalist Noise Generator - Unified Interactive Audio Visualizer & Parametric EQ Curve
  */
 
 class AudioVisualizer {
-  constructor(canvas, engine) {
+  constructor(canvas, engine, onBandChange = null) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.engine = engine;
+    this.onBandChange = onBandChange;
     this.animationId = null;
 
-    this.mode = 'bars'; // 'bars' (segmented LED) | 'wave' | 'curve'
-    
-    // Bar analyzer settings
-    this.numBars = 32;
-    this.barValues = new Float32Array(this.numBars).fill(0);
-    this.targetValues = new Float32Array(this.numBars).fill(0);
-    this.peakValues = new Float32Array(this.numBars).fill(0);
-    this.peakHold = new Int16Array(this.numBars).fill(0);
+    // Frequencies (10 bands)
+    this.frequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    this.freqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 
+    // FFT & Visualizer data
     this.fftData = new Uint8Array(256);
-    this.waveData = new Uint8Array(256);
+    this.smoothedFft = new Float32Array(256).fill(0);
+
+    // Interactive Node State
+    this.draggedIndex = -1;
+    this.hoveredIndex = -1;
+    this.nodePositions = []; // { x, y, freq, label }
+
+    // Padding & geometry
+    this.padding = { top: 30, right: 35, bottom: 35, left: 35 };
 
     this.resize();
+    this.initEvents();
     window.addEventListener('resize', () => this.resize());
   }
 
@@ -36,25 +41,139 @@ class AudioVisualizer {
     this.canvas.height = Math.floor(rect.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Adjust bar count for screen width
-    if (this.width < 500) {
-      this.numBars = 22;
-    } else if (this.width < 800) {
-      this.numBars = 28;
-    } else {
-      this.numBars = 34;
-    }
-
-    if (this.barValues.length !== this.numBars) {
-      this.barValues = new Float32Array(this.numBars).fill(0);
-      this.targetValues = new Float32Array(this.numBars).fill(0);
-      this.peakValues = new Float32Array(this.numBars).fill(0);
-      this.peakHold = new Int16Array(this.numBars).fill(0);
-    }
+    this.computeNodePositions();
   }
 
-  setMode(mode) {
-    this.mode = mode;
+  /**
+   * Logarithmic mapping of frequency to X pixel position
+   */
+  freqToX(freq) {
+    const minF = 20;
+    const maxF = 20000;
+    const usableW = this.width - this.padding.left - this.padding.right;
+    const logMin = Math.log10(minF);
+    const logMax = Math.log10(maxF);
+    const logF = Math.log10(freq);
+    return this.padding.left + ((logF - logMin) / (logMax - logMin)) * usableW;
+  }
+
+  /**
+   * Gain (-24dB to +24dB) to Y pixel position
+   */
+  gainToY(db) {
+    const usableH = this.height - this.padding.top - this.padding.bottom;
+    const centerY = this.padding.top + usableH / 2;
+    // +24dB at top, -24dB at bottom
+    return centerY - (db / 24) * (usableH / 2);
+  }
+
+  /**
+   * Y pixel position to gain in dB (-24 to +24)
+   */
+  yToGain(y) {
+    const usableH = this.height - this.padding.top - this.padding.bottom;
+    const centerY = this.padding.top + usableH / 2;
+    const normalized = (centerY - y) / (usableH / 2);
+    const db = normalized * 24;
+    return Math.max(-24, Math.min(24, Math.round(db)));
+  }
+
+  computeNodePositions() {
+    this.nodePositions = this.frequencies.map((freq, i) => {
+      const x = this.freqToX(freq);
+      const db = this.engine ? this.engine.eqGains[i] : 0;
+      const y = this.gainToY(db);
+      return {
+        x,
+        y,
+        freq,
+        label: this.freqLabels[i],
+        index: i
+      };
+    });
+  }
+
+  initEvents() {
+    const getPointerPos = (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    };
+
+    const findClosestNode = (pos) => {
+      const hitRadius = 24;
+      let closestIdx = -1;
+      let minDist = hitRadius;
+
+      this.nodePositions.forEach((node, idx) => {
+        const dx = pos.x - node.x;
+        const dy = pos.y - node.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < minDist) {
+          minDist = dist;
+          closestIdx = idx;
+        }
+      });
+      return closestIdx;
+    };
+
+    this.canvas.addEventListener('pointerdown', (e) => {
+      const pos = getPointerPos(e);
+      const idx = findClosestNode(pos);
+      if (idx !== -1) {
+        this.draggedIndex = idx;
+        this.canvas.setPointerCapture(e.pointerId);
+        const newGain = this.yToGain(pos.y);
+        this.updateBandGain(idx, newGain);
+      }
+    });
+
+    this.canvas.addEventListener('pointermove', (e) => {
+      const pos = getPointerPos(e);
+      if (this.draggedIndex !== -1) {
+        const newGain = this.yToGain(pos.y);
+        this.updateBandGain(this.draggedIndex, newGain);
+      } else {
+        const hovered = findClosestNode(pos);
+        if (hovered !== this.hoveredIndex) {
+          this.hoveredIndex = hovered;
+          this.canvas.style.cursor = hovered !== -1 ? 'ns-resize' : 'default';
+        }
+      }
+    });
+
+    const endDrag = (e) => {
+      if (this.draggedIndex !== -1) {
+        try {
+          this.canvas.releasePointerCapture(e.pointerId);
+        } catch (err) {}
+        this.draggedIndex = -1;
+      }
+    };
+
+    this.canvas.addEventListener('pointerup', endDrag);
+    this.canvas.addEventListener('pointercancel', endDrag);
+
+    // Double-click resets clicked band to 0dB
+    this.canvas.addEventListener('dblclick', (e) => {
+      const pos = getPointerPos(e);
+      const idx = findClosestNode(pos);
+      if (idx !== -1) {
+        this.updateBandGain(idx, 0);
+      }
+    });
+  }
+
+  updateBandGain(index, db) {
+    if (this.engine) {
+      this.engine.setEqBand(index, db);
+    }
+    this.computeNodePositions();
+    if (this.onBandChange) {
+      this.onBandChange(index, db);
+    }
   }
 
   start() {
@@ -74,236 +193,222 @@ class AudioVisualizer {
 
   clear() {
     this.ctx.clearRect(0, 0, this.width, this.height);
-    // Draw idle state
-    if (this.mode === 'bars') {
-      this.drawLedBars(true);
-    } else {
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-      this.ctx.lineWidth = 1;
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, this.height / 2);
-      this.ctx.lineTo(this.width, this.height / 2);
-      this.ctx.stroke();
-    }
+    this.drawInteractiveCurve(true);
   }
 
   draw() {
     this.animationId = requestAnimationFrame(this.draw);
-
-    if (this.mode === 'wave') {
-      this.drawWaveform();
-    } else if (this.mode === 'curve') {
-      this.drawCurve();
-    } else {
-      this.drawLedBars(false);
-    }
+    this.drawInteractiveCurve(false);
   }
 
   /**
-   * Segmented LED VU Meter Spectrum Analyzer with Peak-Hold & Mirror Reflection
+   * Main Interactive EQ & Curve Visualizer
    */
-  drawLedBars(isIdle = false) {
+  drawInteractiveCurve(isIdle = false) {
     const w = this.width;
     const h = this.height;
 
-    // Clear background to deep dark canvas
-    this.ctx.fillStyle = '#050505';
+    // Refresh node coordinates to track any external slider/preset changes
+    this.computeNodePositions();
+
+    // 1. Deep OLED Background
+    this.ctx.fillStyle = '#060606';
     this.ctx.fillRect(0, 0, w, h);
 
+    const centerY = this.gainToY(0);
+
+    // 2. Draw Reference Grid Lines
+    this.ctx.lineWidth = 1;
+
+    // Subtle horizontal dB markings (+18, +12, +6, 0, -6, -12, -18)
+    const dbSteps = [18, 12, 6, 0, -6, -12, -18];
+    dbSteps.forEach(db => {
+      const y = this.gainToY(db);
+      this.ctx.beginPath();
+      if (db === 0) {
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+        this.ctx.setLineDash([]);
+      } else {
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        this.ctx.setLineDash([4, 4]);
+      }
+      this.ctx.moveTo(this.padding.left, y);
+      this.ctx.lineTo(w - this.padding.right, y);
+      this.ctx.stroke();
+
+      // dB Labels on right edge
+      this.ctx.fillStyle = db === 0 ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.18)';
+      this.ctx.font = '9px SF Mono, monospace';
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText(`${db > 0 ? '+' : ''}${db}`, w - 10, y + 3);
+    });
+    this.ctx.setLineDash([]);
+
+    // Vertical octave grid lines
+    this.nodePositions.forEach(node => {
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+      this.ctx.beginPath();
+      this.ctx.moveTo(node.x, this.padding.top);
+      this.ctx.lineTo(node.x, h - this.padding.bottom);
+      this.ctx.stroke();
+
+      // Frequency labels along bottom edge
+      this.ctx.fillStyle = (this.hoveredIndex === node.index || this.draggedIndex === node.index)
+        ? '#ffffff'
+        : 'rgba(255, 255, 255, 0.35)';
+      this.ctx.font = '10px SF Mono, monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(node.label, node.x, h - 14);
+    });
+
+    // 3. Draw Real-time Ambient Audio Spectrum (Soft Glowing Fill & Wave)
     if (!isIdle) {
       this.engine.getFrequencyData(this.fftData);
+      const fftLen = this.fftData.length;
+
+      // Smooth FFT data
+      for (let i = 0; i < fftLen; i++) {
+        this.smoothedFft[i] += (this.fftData[i] - this.smoothedFft[i]) * 0.28;
+      }
+
+      // Draw subtle audio energy glow under curve
+      this.ctx.beginPath();
+      const numSamples = 64;
+      const step = (w - this.padding.left - this.padding.right) / (numSamples - 1);
+
+      this.ctx.moveTo(this.padding.left, h - this.padding.bottom);
+
+      for (let s = 0; s < numSamples; s++) {
+        const x = this.padding.left + s * step;
+        const normX = s / (numSamples - 1);
+        const bin = Math.min(fftLen - 1, Math.max(1, Math.floor(Math.pow(normX, 1.6) * (fftLen * 0.75))));
+        const energy = this.smoothedFft[bin] / 255;
+        // Map energy height smoothly
+        const y = (h - this.padding.bottom) - (energy * (h - this.padding.top - this.padding.bottom) * 0.7);
+
+        if (s === 0) {
+          this.ctx.lineTo(x, y);
+        } else {
+          this.ctx.lineTo(x, y);
+        }
+      }
+
+      this.ctx.lineTo(w - this.padding.right, h - this.padding.bottom);
+      this.ctx.closePath();
+
+      // Very subtle monochromatic gradient fill
+      const grad = this.ctx.createLinearGradient(0, this.padding.top, 0, h);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+      grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.03)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0.00)');
+      this.ctx.fillStyle = grad;
+      this.ctx.fill();
     }
 
-    const reflectionHeight = Math.floor(h * 0.18); // Bottom reflection
-    const baselineY = h - reflectionHeight - 4;
-    const availableHeight = baselineY - 14;
+    // 4. Draw Smooth Parametric EQ Filter Curve
+    // Smooth Catmull-Rom or Bezier interpolation passing through all 10 nodes
+    const curvePoints = [];
+    // Start anchor at left edge
+    curvePoints.push({ x: 0, y: this.nodePositions[0].y });
+    curvePoints.push({ x: this.padding.left, y: this.nodePositions[0].y });
 
-    const segHeight = 3.5;
-    const segGap = 2.0;
-    const segTotal = segHeight + segGap;
-    const maxSegments = Math.max(12, Math.floor(availableHeight / segTotal));
+    this.nodePositions.forEach(n => {
+      curvePoints.push({ x: n.x, y: n.y });
+    });
 
-    const totalBars = this.numBars;
-    const sidePadding = 12;
-    const usableWidth = w - (sidePadding * 2);
-    const barGap = 4;
-    const barWidth = Math.max(3, (usableWidth - (totalBars - 1) * barGap) / totalBars);
+    // End anchor at right edge
+    curvePoints.push({ x: w - this.padding.right, y: this.nodePositions[this.nodePositions.length - 1].y });
+    curvePoints.push({ x: w, y: this.nodePositions[this.nodePositions.length - 1].y });
 
-    // Map FFT frequencies to logarithmic bands
-    const fftLen = this.fftData.length;
-    for (let i = 0; i < totalBars; i++) {
-      if (isIdle) {
-        this.targetValues[i] = 0;
-      } else {
-        // Logarithmic distribution to span low, mid, and high frequencies cleanly
-        const lowFreqFraction = Math.pow(i / totalBars, 1.8);
-        const highFreqFraction = Math.pow((i + 1) / totalBars, 1.8);
+    // Draw the curve line
+    this.ctx.beginPath();
+    this.ctx.moveTo(curvePoints[0].x, curvePoints[0].y);
 
-        const startBin = Math.min(fftLen - 2, Math.max(1, Math.floor(lowFreqFraction * (fftLen * 0.7))));
-        const endBin = Math.min(fftLen - 1, Math.max(startBin + 1, Math.floor(highFreqFraction * (fftLen * 0.7))));
+    for (let i = 0; i < curvePoints.length - 1; i++) {
+      const p0 = i > 0 ? curvePoints[i - 1] : curvePoints[i];
+      const p1 = curvePoints[i];
+      const p2 = curvePoints[i + 1];
+      const p3 = i < curvePoints.length - 2 ? curvePoints[i + 2] : p2;
 
-        let sum = 0;
-        let count = 0;
-        for (let b = startBin; b <= endBin; b++) {
-          sum += this.fftData[b];
-          count++;
-        }
-        const avg = count > 0 ? sum / count : 0;
-        // Normalized 0 to 1 with gentle boost for highs
-        const highCompensation = 1 + (i / totalBars) * 0.65;
-        this.targetValues[i] = Math.min(1.0, (avg / 255) * highCompensation);
-      }
+      // Tension spline approximation
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
 
-      // Smooth attack and decay
-      if (this.targetValues[i] > this.barValues[i]) {
-        this.barValues[i] += (this.targetValues[i] - this.barValues[i]) * 0.45; // Fast attack
-      } else {
-        this.barValues[i] += (this.targetValues[i] - this.barValues[i]) * 0.12; // Smooth decay
-      }
-
-      // Peak Hold Logic
-      if (this.barValues[i] >= this.peakValues[i]) {
-        this.peakValues[i] = this.barValues[i];
-        this.peakHold[i] = 14; // ~230ms hold at 60fps
-      } else {
-        if (this.peakHold[i] > 0) {
-          this.peakHold[i]--;
-        } else {
-          this.peakValues[i] = Math.max(0, this.peakValues[i] - 0.018); // Fall by gravity
-        }
-      }
+      this.ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
     }
 
-    // Render Bars
-    for (let i = 0; i < totalBars; i++) {
-      const barX = sidePadding + i * (barWidth + barGap);
-      const activeSegs = Math.round(this.barValues[i] * maxSegments);
-      const peakSeg = Math.min(maxSegments - 1, Math.round(this.peakValues[i] * maxSegments));
+    // Curve glow and crisp stroke
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 2.0;
+    this.ctx.shadowBlur = 10;
+    this.ctx.shadowColor = 'rgba(255, 255, 255, 0.45)';
+    this.ctx.stroke();
+    this.ctx.shadowBlur = 0;
 
-      // 1. Draw unlit ghost segments (pro hardware display look)
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
-      for (let s = activeSegs; s < maxSegments; s++) {
-        const segY = baselineY - (s + 1) * segTotal;
-        this.ctx.fillRect(barX, segY, barWidth, segHeight);
+    // 5. Draw 10 Interactive Draggable Control Nodes
+    this.nodePositions.forEach(node => {
+      const isHovered = this.hoveredIndex === node.index;
+      const isDragged = this.draggedIndex === node.index;
+      const gain = this.engine ? this.engine.eqGains[node.index] : 0;
+      const isBoosted = gain > 0;
+      const isModified = gain !== 0;
+
+      // Halo on hover / drag
+      if (isHovered || isDragged) {
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, 16, 0, Math.PI * 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+        this.ctx.fill();
       }
 
-      // 2. Draw active lit segments
-      for (let s = 0; s < activeSegs; s++) {
-        const segY = baselineY - (s + 1) * segTotal;
-        const normHeight = s / maxSegments;
-
-        // Subtle gradient: bright white at base -> sleek crisp silver -> soft high
-        if (normHeight < 0.45) {
-          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-        } else if (normHeight < 0.75) {
-          this.ctx.fillStyle = 'rgba(235, 235, 235, 0.82)';
-        } else {
-          this.ctx.fillStyle = 'rgba(180, 180, 180, 0.60)';
-        }
-
-        this.ctx.fillRect(barX, segY, barWidth, segHeight);
+      // Connecting stem line from 0dB baseline to node
+      if (isModified) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(node.x, centerY);
+        this.ctx.lineTo(node.x, node.y);
+        this.ctx.strokeStyle = isBoosted ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
       }
 
-      // 3. Draw Floating Peak Cap (Crisp bright white segment)
-      if (peakSeg > 0 && this.peakValues[i] > 0.04) {
-        const peakY = baselineY - (peakSeg + 1) * segTotal;
+      // Outer Handle Circle
+      this.ctx.beginPath();
+      this.ctx.arc(node.x, node.y, isDragged ? 8 : (isHovered ? 7.5 : 6), 0, Math.PI * 2);
+      this.ctx.fillStyle = isModified ? '#ffffff' : '#0a0a0a';
+      this.ctx.fill();
+      this.ctx.lineWidth = 2;
+      this.ctx.strokeStyle = '#ffffff';
+      this.ctx.stroke();
+
+      // Inner center dot
+      this.ctx.beginPath();
+      this.ctx.arc(node.x, node.y, 2.5, 0, Math.PI * 2);
+      this.ctx.fillStyle = isModified ? '#000000' : '#ffffff';
+      this.ctx.fill();
+
+      // Floating Tooltip Badge on active drag or hover
+      if (isDragged || isHovered) {
+        const badgeText = `${gain > 0 ? '+' : ''}${gain}dB`;
+        this.ctx.font = '600 10px SF Mono, monospace';
+        const textWidth = this.ctx.measureText(badgeText).width;
+        const badgeW = textWidth + 12;
+        const badgeH = 18;
+        const badgeY = node.y - 24;
+
+        // Tooltip pill background
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.shadowBlur = 5;
-        this.ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
-        this.ctx.fillRect(barX, peakY, barWidth, segHeight);
-        this.ctx.shadowBlur = 0;
+        this.ctx.beginPath();
+        this.ctx.roundRect(node.x - badgeW / 2, badgeY, badgeW, badgeH, 4);
+        this.ctx.fill();
+
+        // Tooltip text
+        this.ctx.fillStyle = '#000000';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(badgeText, node.x, badgeY + 12.5);
       }
-
-      // 4. Draw Bottom Mirror Reflection
-      const reflectCount = Math.min(activeSegs, 7);
-      for (let r = 0; r < reflectCount; r++) {
-        const refY = baselineY + 3 + r * segTotal;
-        // Fade downward
-        const alpha = Math.max(0, (1 - (r / 7)) * 0.22);
-        this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
-        this.ctx.fillRect(barX, refY, barWidth, segHeight);
-      }
-    }
-
-    // Draw Sleek Baseline Divider
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    this.ctx.lineWidth = 1;
-    this.ctx.beginPath();
-    this.ctx.moveTo(sidePadding, baselineY);
-    this.ctx.lineTo(w - sidePadding, baselineY);
-    this.ctx.stroke();
-  }
-
-  /**
-   * Minimalist Smooth Waveform View
-   */
-  drawWaveform() {
-    this.engine.getTimeDomainData(this.waveData);
-    const len = this.waveData.length;
-    const w = this.width;
-    const h = this.height;
-
-    this.ctx.fillStyle = '#050505';
-    this.ctx.fillRect(0, 0, w, h);
-
-    this.ctx.beginPath();
-    const sliceWidth = w / (len - 1);
-
-    for (let i = 0; i < len; i++) {
-      const v = this.waveData[i] / 128.0;
-      const y = (v * h) / 2;
-      const x = i * sliceWidth;
-
-      if (i === 0) {
-        this.ctx.moveTo(x, y);
-      } else {
-        this.ctx.lineTo(x, y);
-      }
-    }
-
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-    this.ctx.lineWidth = 1.3;
-    this.ctx.shadowBlur = 6;
-    this.ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
-    this.ctx.stroke();
-    this.ctx.shadowBlur = 0;
-  }
-
-  /**
-   * Continuous smooth curve view
-   */
-  drawCurve() {
-    this.engine.getFrequencyData(this.fftData);
-    const len = Math.floor(this.fftData.length * 0.75);
-    const w = this.width;
-    const h = this.height;
-
-    this.ctx.fillStyle = '#050505';
-    this.ctx.fillRect(0, 0, w, h);
-
-    this.ctx.beginPath();
-    const sliceWidth = w / (len - 1);
-
-    for (let i = 0; i < len; i++) {
-      const v = this.fftData[i] / 255;
-      const y = h - (v * (h * 0.8)) - 4;
-      const x = i * sliceWidth;
-
-      if (i === 0) {
-        this.ctx.moveTo(x, y);
-      } else {
-        const prevX = (i - 1) * sliceWidth;
-        const prevY = h - (this.fftData[i - 1] / 255 * (h * 0.8)) - 4;
-        this.ctx.quadraticCurveTo(prevX, prevY, (prevX + x) / 2, (prevY + y) / 2);
-      }
-    }
-
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-    this.ctx.lineWidth = 1.4;
-    this.ctx.shadowBlur = 8;
-    this.ctx.shadowColor = 'rgba(255, 255, 255, 0.35)';
-    this.ctx.stroke();
-    this.ctx.shadowBlur = 0;
+    });
   }
 }
 

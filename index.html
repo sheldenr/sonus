@@ -74,14 +74,38 @@
       </div>
     </header>
 
-    <!-- Centerpiece: Segmented LED Bar Spectrum Analyzer -->
-    <section class="visualizer-wrapper" aria-label="Audio Visualizer">
-      <div class="visualizer-toolbar">
-        <button id="vizModeBars" class="viz-btn active" title="Segmented LED VU Bars View">BARS</button>
-        <button id="vizModeWave" class="viz-btn" title="Oscilloscope Waveform View">WAVE</button>
-        <button id="vizModeCurve" class="viz-btn" title="Continuous Smooth Spectrum View">CURVE</button>
+    <!-- Unified Centerpiece: Interactive Frequency Curve & Custom Equalizer -->
+    <section class="unified-eq-container" aria-label="Interactive Equalizer & Frequency Visualizer">
+      <div class="unified-eq-header">
+        <div class="eq-meta-left">
+          <span class="unified-eq-title">PARAMETRIC EQUALIZER</span>
+          <span class="eq-mode-tag" id="eqProfileTag">PROFILE: FLAT</span>
+          <span class="eq-mode-tag" id="eqActiveBandsCount">0 BANDS BOOSTED</span>
+        </div>
+
+        <div class="eq-actions">
+          <button id="eqFlattenBtn" class="eq-action-btn" title="Reset all 10 bands to 0dB">FLATTEN</button>
+          <button id="eqWarmBtn" class="eq-action-btn" title="Boost lower frequencies">WARM</button>
+          <button id="eqVoiceBtn" class="eq-action-btn" title="Focus speech clarity range">VOICE</button>
+          <button id="eqAirBtn" class="eq-action-btn" title="Lift top frequencies">AIR</button>
+          <button id="eqRandBtn" class="eq-action-btn" title="Randomize band gains">RANDOM</button>
+        </div>
       </div>
-      <canvas id="vizCanvas" class="visualizer-canvas"></canvas>
+
+      <!-- Interactive Canvas Screen: Live Audio Spectrum + Parametric Curve + Draggable Nodes -->
+      <div class="eq-canvas-card">
+        <canvas id="vizCanvas" class="eq-interactive-canvas"></canvas>
+        <div class="canvas-interactive-overlay">
+          <span class="canvas-instruction">DRAG NODES ON CURVE TO SCULPT FREQUENCIES • DOUBLE-CLICK TO RESET</span>
+        </div>
+      </div>
+
+      <!-- Aligned Faders Deck: 10 Channels Aligned directly under the 10 frequency nodes -->
+      <div class="eq-docked-faders">
+        <div class="eq-grid" id="eqGrid">
+          <!-- Populated dynamically: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz -->
+        </div>
+      </div>
     </section>
 
     <!-- Master Control Deck -->
@@ -215,35 +239,6 @@
       </div>
     </section>
 
-    <!-- 10-Band Custom Equalizer -->
-    <section class="section-container" aria-label="10-Band Custom Equalizer">
-      <div class="section-header">
-        <h2 class="section-title">Custom Frequency Equalizer</h2>
-        <span class="section-hint">Selectively increase or sculpt 10 frequency ranges (-24dB to +24dB)</span>
-      </div>
-
-      <div class="eq-container">
-        <div class="eq-controls-bar">
-          <div class="eq-badges">
-            <span class="eq-mode-tag" id="eqProfileTag">PROFILE: FLAT</span>
-            <span class="eq-mode-tag" id="eqActiveBandsCount">0 BANDS BOOSTED</span>
-          </div>
-
-          <div class="eq-actions">
-            <button id="eqFlattenBtn" class="eq-action-btn" title="Reset all 10 bands to 0dB">FLATTEN</button>
-            <button id="eqWarmBtn" class="eq-action-btn" title="Boost lower frequencies">WARM</button>
-            <button id="eqVoiceBtn" class="eq-action-btn" title="Focus speech clarity range">VOICE</button>
-            <button id="eqAirBtn" class="eq-action-btn" title="Lift top frequencies">AIR</button>
-            <button id="eqRandBtn" class="eq-action-btn" title="Randomize band gains">RANDOM</button>
-          </div>
-        </div>
-
-        <!-- 10 Frequency Faders Grid -->
-        <div class="eq-grid" id="eqGrid">
-          <!-- Populated dynamically: 31Hz, 62Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz -->
-        </div>
-      </div>
-    </section>
 
     <!-- Zen Reflection Quote -->
     <section class="quote-section" aria-label="Reflection on Silence">
