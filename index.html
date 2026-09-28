@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050507" />
-    <title>Sonus — Minimalist Study Sound & Frequency Environment</title>
+    <title>Sonus • White Noise Generator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -44,9 +44,9 @@
           <svg class="eq-svg" id="eqSvg" viewBox="0 0 1000 360" preserveAspectRatio="none">
             <defs>
               <linearGradient id="curveFillGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18" />
-                <stop offset="70%" stop-color="#ffffff" stop-opacity="0.03" />
-                <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+                <stop id="gradStop0" offset="0%" stop-color="#ffffff" stop-opacity="0.18" />
+                <stop id="gradStop1" offset="70%" stop-color="#ffffff" stop-opacity="0.03" />
+                <stop id="gradStop2" offset="100%" stop-color="#ffffff" stop-opacity="0" />
               </linearGradient>
 
               <filter id="neonBlur" x="-30%" y="-30%" width="160%" height="160%">
@@ -112,10 +112,10 @@
               </svg>
             </button>
             <div class="volume-slider-track">
-              <input type="range" id="masterVolume" min="0" max="100" value="65" aria-label="Volume" />
-              <div class="volume-slider-progress" id="volumeProgress" style="width: 65%;"></div>
+              <input type="range" id="masterVolume" min="0" max="100" value="60" aria-label="Volume" />
+              <div class="volume-slider-progress" id="volumeProgress" style="width: 60%;"></div>
             </div>
-            <span class="volume-text" id="volumeValue">65%</span>
+            <span class="volume-text" id="volumeValue">60%</span>
           </div>
 
           <div class="shortcut-legend">Press <kbd>Space</kbd> to toggle</div>
@@ -147,10 +147,13 @@
             <h2>About the Developer</h2>
             <div class="card-body">
               <p>
-                The modern web is perpetually loud. Notifications, intrusive trackers, and cognitive clutter fight constantly for your attention. I built <strong>Sonus</strong> to be the exact opposite: an uncompromised, beautiful sanctuary where you can sit down, put on headphones, and disappear into your work.
+                I’ve always loved studying to white noise and wanted to build my own generator for it. Most ambient audio tools out there felt either cluttered, locked behind subscriptions, or based on looped audio files &mdash; so I set out to make something personal, lightweight, and focused purely on studying.
               </p>
               <p>
-                Every frequency in this generator runs directly in your browser through the native Web Audio API — there are no servers streaming audio files, no subscriptions, and zero analytics tracking your focus. Whether you use deep Brown noise to soothe an ADHD mind, Speech Blocker to mute open-office chatter, or sculpt your own custom 10-band profile, I hope this tool brings quiet clarity to your craft.
+                <strong>Sonus</strong> runs completely local in your browser through procedural Web Audio synthesis. There are no tracking scripts, no audio streaming from remote servers, and no distractions. Everything is minimal and custom to you &mdash; allowing you to sculpt the 10-band equalizer to match your exact acoustic environment and headspace.
+              </p>
+              <p>
+                It was built out of a simple need for quiet study flow, and I genuinely hope it helps you find focus in your own work.
               </p>
               <div class="dev-author">
                 <span class="dev-name">Shelden Rattray</span>
@@ -225,7 +228,46 @@
         </a>
       </div>
 
+      <!-- Ambient Focus Quote GUI Layer (Fades in during stillness / inactive mode) -->
+      <div class="idle-quote-layer" id="idleQuoteLayer" aria-live="polite" aria-hidden="true">
+        <div class="idle-quote-hud">
+          <blockquote class="idle-quote-text" id="idleQuoteText">
+            &ldquo;Silence is not the absence of sound, but the presence of stillness.&rdquo;
+          </blockquote>
+          <cite class="idle-quote-author" id="idleQuoteAuthor">&mdash; ACOUSTIC REFLECTION</cite>
+        </div>
+      </div>
+
     </div>
+
+    <!-- Bottom-Left Quick Controls: Light Mode & Fullscreen -->
+    <aside class="bottom-left-dock" aria-label="Display Controls">
+      <button class="glass-btn utility-icon-btn" id="themeToggleBtn" type="button" aria-label="Toggle light mode (T)" title="Toggle light mode (T)">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+
+      <button class="glass-btn utility-icon-btn" id="fullscreenToggleBtn" type="button" aria-label="Toggle fullscreen (F)" title="Toggle fullscreen (F)">
+        <svg class="fs-icon-enter" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+        <svg class="fs-icon-exit" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+        </svg>
+      </button>
+    </aside>
 
     <script src="app.js"></script>
   </body>

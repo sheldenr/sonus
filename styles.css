@@ -148,6 +148,8 @@ a {
   width: 100%;
   padding: 36px 48px 16px;
   box-sizing: border-box;
+  position: relative;
+  z-index: 50;
 }
 
 .topbar-left {
@@ -244,10 +246,6 @@ a {
   user-select: none;
   touch-action: none;
   cursor: crosshair;
-
-  /* Organic edge fadeouts into the background */
-  mask-image: linear-gradient(90deg, transparent 0%, black 7%, black 93%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 7%, black 93%, transparent 100%);
 }
 
 .eq-backdrop-canvas {
@@ -257,12 +255,19 @@ a {
   height: 100%;
   pointer-events: none;
   z-index: 1;
+  /* Organic edge fadeouts for audio spectrum wave */
+  mask-image: linear-gradient(90deg, transparent 0%, black 7%, black 93%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 7%, black 93%, transparent 100%);
 }
 
-/* dB Grid Lines */
+/* dB Grid Lines — Going completely to the side of the page across full viewport */
 .eq-db-grid {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
   pointer-events: none;
   z-index: 2;
 }
@@ -271,6 +276,7 @@ a {
   position: absolute;
   left: 0;
   right: 0;
+  width: 100%;
   height: 1px;
   display: flex;
   align-items: center;
@@ -287,13 +293,14 @@ a {
   position: absolute;
   left: 0;
   right: 0;
+  width: 100%;
   height: 1px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .db-line.zero i {
-  background: rgba(255, 255, 255, 0.07);
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
 }
 
 /* SVG Curves */
@@ -338,7 +345,7 @@ a {
 }
 
 .eq-plot-wrap.is-morphing .handle-ring {
-  box-shadow: 0 0 16px rgba(255, 255, 255, 0.75);
+  box-shadow: none;
 }
 
 /* Interactive Handles / Nodes */
@@ -375,10 +382,8 @@ a {
   border-radius: 50%;
   background: #ffffff;
   border: none;
-  box-shadow: 
-    0 0 10px rgba(255, 255, 255, 0.75),
-    0 0 2px #ffffff;
-  transition: transform 0.15s var(--ease-spring), box-shadow 0.2s ease;
+  box-shadow: none;
+  transition: transform 0.15s var(--ease-spring);
 }
 
 .handle-dot {
@@ -387,11 +392,9 @@ a {
 
 .eq-handle:hover .handle-ring,
 .eq-handle.is-dragging .handle-ring {
-  transform: scale(1.45);
+  transform: scale(1.35);
   background: #ffffff;
-  box-shadow: 
-    0 0 20px rgba(255, 255, 255, 0.95),
-    0 0 6px #ffffff;
+  box-shadow: none;
 }
 
 .eq-handle:hover .handle-dot,
@@ -890,8 +893,9 @@ kbd {
 .masonry-cards-section,
 .bottom-signature-wrap,
 .eq-frequency-axis,
-.interactive-hint {
-  transition: opacity 0.35s ease, filter 0.35s ease;
+.interactive-hint,
+.bottom-left-dock {
+  transition: opacity 0.35s ease, filter 0.35s ease, transform 0.35s ease;
 }
 
 body.is-idle {
@@ -902,11 +906,298 @@ body.is-idle .bottom-dock,
 body.is-idle .masonry-cards-section,
 body.is-idle .bottom-signature-wrap,
 body.is-idle .eq-frequency-axis,
-body.is-idle .interactive-hint {
+body.is-idle .interactive-hint,
+body.is-idle .bottom-left-dock {
   opacity: 0;
   pointer-events: none;
   filter: blur(2px);
-  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), filter 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(8px);
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), filter 1.2s cubic-bezier(0.16, 1, 0.3, 1), transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Ensure Topbar, Sonus Wordmark & Live Time Clock stay prominently visible when inactive mode comes */
+body.is-idle .topbar,
+body.is-idle .wordmark,
+body.is-idle .clock-display {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto;
+}
+
+/* ==========================================================================
+   Ambient Focus Quote GUI Layer (Overlay HUD replacing bottom dock)
+   ========================================================================== */
+
+.idle-quote-layer {
+  position: fixed;
+  bottom: clamp(28px, 6vh, 60px);
+  left: 50%;
+  transform: translate(-50%, 16px);
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 1.2s;
+  width: 90%;
+  max-width: 660px;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+body.is-idle .idle-quote-layer {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.idle-quote-hud {
+  background: rgba(14, 14, 18, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  padding: 20px 32px 18px;
+  box-shadow: 
+    0 16px 40px -8px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.idle-quote-text {
+  font-size: 14.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.idle-quote-author {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+/* ==========================================================================
+   Bottom-Left Display & Quick Controls (Fullscreen + Light Mode)
+   ========================================================================== */
+
+.bottom-left-dock {
+  position: fixed;
+  bottom: 24px;
+  left: 28px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.utility-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.utility-icon-btn:hover {
+  color: var(--text-primary);
+}
+
+.theme-icon-moon { display: none; }
+body.light-theme .theme-icon-sun { display: none; }
+body.light-theme .theme-icon-moon { display: block; }
+
+.fs-icon-exit { display: none; }
+body.is-fullscreen .fs-icon-enter { display: none; }
+body.is-fullscreen .fs-icon-exit { display: block; }
+
+/* ==========================================================================
+   Light Mode Theme
+   ========================================================================== */
+
+body.light-theme {
+  --bg-base: #f5f5f7;
+  --bg-surface: rgba(255, 255, 255, 0.75);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-focus: rgba(0, 0, 0, 0.22);
+
+  --text-primary: #121214;
+  --text-secondary: #5a5a65;
+  --text-muted: #8e8e98;
+
+  --accent-neon: #000000;
+  --accent-glow: rgba(0, 0, 0, 0.15);
+
+  color-scheme: light;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+body.light-theme .glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 12px 32px -8px rgba(0, 0, 0, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.light-theme .glass-btn {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  color: #18181b;
+}
+
+body.light-theme .glass-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 #ffffff;
+}
+
+body.light-theme .glass-btn:active,
+body.light-theme .glass-btn.active {
+  background: #18181b;
+  border-color: #18181b;
+  box-shadow: 
+    0 4px 18px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+body.light-theme .glass-btn.active .preset-pill-name {
+  color: #ffffff;
+}
+
+body.light-theme .glass-btn.active .preset-pill-desc {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+body.light-theme .glass-card {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 20px 48px -12px rgba(0, 0, 0, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.light-theme .main-focus-btn.is-playing {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .volume-slider-track {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+body.light-theme .volume-slider-progress {
+  background: #18181b;
+}
+
+body.light-theme .flat-reset-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+}
+
+body.light-theme .flat-reset-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.18);
+  color: var(--text-primary);
+}
+
+body.light-theme .faq-item {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+body.light-theme .faq-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+body.light-theme .faq-item[open] {
+  background: rgba(0, 0, 0, 0.035);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+body.light-theme kbd {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text-secondary);
+}
+
+body.light-theme .drag-tooltip {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 14px rgba(0, 0, 0, 0.06);
+}
+
+body.light-theme .tooltip-val {
+  color: #18181b;
+}
+
+body.light-theme .signature-badge {
+  filter: invert(1);
+}
+
+body.light-theme .db-line i {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+body.light-theme .db-line.zero i {
+  background: rgba(0, 0, 0, 0.1);
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .eq-svg {
+  color: #18181b;
+}
+
+body.light-theme .eq-path-glow {
+  stroke: #18181b;
+  opacity: 0.22;
+}
+
+body.light-theme .eq-path-core {
+  stroke: #18181b;
+}
+
+body.light-theme .handle-ring {
+  background: #18181b;
+  box-shadow: none;
+}
+
+body.light-theme .eq-handle:hover .handle-ring,
+body.light-theme .eq-handle.is-dragging .handle-ring {
+  background: #000000;
+  box-shadow: none;
+}
+
+body.light-theme .idle-quote-hud {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 16px 40px -8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 /* ==========================================================================

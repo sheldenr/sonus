@@ -50,7 +50,8 @@ let currentCategory = "all";
 let eqValues = [...PRESETS[activePresetIndex].values];
 let isPlaying = false;
 let isMuted = false;
-let masterVolume = 0.65;
+let masterVolume = 0.60;
+const PAGE_LOUDNESS_SCALE = 0.60; // 60% baseline loudness scale
 
 let draggingIndex = null;
 let audio = null;
@@ -476,7 +477,7 @@ async function startPlayback() {
     await audio.context.resume();
   }
 
-  const targetGain = isMuted ? 0 : masterVolume;
+  const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
   audio.masterGain.gain.setValueAtTime(audio.masterGain.gain.value, audio.context.currentTime);
   audio.masterGain.gain.linearRampToValueAtTime(targetGain, audio.context.currentTime + 0.25);
 
@@ -638,18 +639,32 @@ function drawCanvasVisuals(ctx, width, height) {
     ctx.lineTo(width, height);
     ctx.closePath();
 
-    // Monochrome white/silver gradient wash
+    // Monochrome gradient wash adaptive to theme
+    const isLight = document.body.classList.contains("light-theme");
     const grad = ctx.createLinearGradient(0, height * 0.35, 0, height);
-    grad.addColorStop(0, "rgba(255, 255, 255, 0.14)");
-    grad.addColorStop(0.6, "rgba(255, 255, 255, 0.03)");
-    grad.addColorStop(1, "rgba(255, 255, 255, 0)");
-    ctx.fillStyle = grad;
-    ctx.fill();
+    if (isLight) {
+      grad.addColorStop(0, "rgba(0, 0, 0, 0.09)");
+      grad.addColorStop(0.6, "rgba(0, 0, 0, 0.02)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = grad;
+      ctx.fill();
 
-    // Clean white wave crest
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-    ctx.stroke();
+      // Clean dark wave crest
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.22)";
+      ctx.stroke();
+    } else {
+      grad.addColorStop(0, "rgba(255, 255, 255, 0.14)");
+      grad.addColorStop(0.6, "rgba(255, 255, 255, 0.03)");
+      grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Clean white wave crest
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.stroke();
+    }
   }
 }
 
@@ -659,12 +674,12 @@ function updateAcousticReactivity() {
     const handles = eqNodesLayer.querySelectorAll(".handle-ring");
     handles.forEach(ring => {
       ring.style.transform = "";
-      ring.style.boxShadow = "";
+      ring.style.boxShadow = "none";
     });
     return;
   }
 
-  // Pulse node rings gently based on specific frequency band energy
+  // Pulse node rings gently in scale based on frequency energy (clean, no glow)
   BANDS.forEach((band, i) => {
     let bandSum = 0;
     let count = 0;
@@ -678,9 +693,8 @@ function updateAcousticReactivity() {
       const ring = handleEl.querySelector(".handle-ring");
       if (ring) {
         const scale = 1 + bandEnergy * 0.35;
-        const glow = 10 + bandEnergy * 14;
         ring.style.transform = `scale(${scale.toFixed(2)})`;
-        ring.style.boxShadow = `0 0 ${glow.toFixed(0)}px rgba(255, 255, 255, ${(0.7 + bandEnergy * 0.3).toFixed(2)}), 0 0 2px #ffffff`;
+        ring.style.boxShadow = "none";
       }
     }
   });
@@ -728,7 +742,7 @@ function setMasterVolume(val) {
   }
 
   if (audio && isPlaying) {
-    audio.masterGain.gain.setTargetAtTime(masterVolume, audio.context.currentTime, 0.03);
+    audio.masterGain.gain.setTargetAtTime(masterVolume * PAGE_LOUDNESS_SCALE, audio.context.currentTime, 0.03);
   }
 }
 
@@ -737,8 +751,106 @@ function toggleMute() {
   muteToggleBtn.classList.toggle("muted", isMuted);
 
   if (audio && isPlaying) {
-    const targetGain = isMuted ? 0 : masterVolume;
+    const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
     audio.masterGain.gain.setTargetAtTime(targetGain, audio.context.currentTime, 0.03);
+  }
+}
+
+// --- Ambient Stillness Focus Quotes ---
+const FOCUS_QUOTES = [
+  { text: "“Silence is not the absence of sound, but the presence of stillness.”", author: "Acoustic Reflection" },
+  { text: "“In the silence behind the noise, clarity awaits.”", author: "Stillness" },
+  { text: "“Simplicity is the ultimate sophistication.”", author: "Leonardo da Vinci" },
+  { text: "“The quieter you become, the more you are able to hear.”", author: "Rumi" },
+  { text: "“Stillness is where creativity and solutions to problems are found.”", author: "Eckhart Tolle" },
+  { text: "“Music is the silence between the notes.”", author: "Claude Debussy" },
+  { text: "“Order and simplification are the first steps toward mastery.”", author: "Thomas Mann" },
+  { text: "“Muddy water is best cleared by leaving it alone.”", author: "Alan Watts" },
+  { text: "“Quiet the noise, focus the craft.”", author: "Sonus Philosophy" },
+  { text: "“Deep work is the ability to focus without distraction on a demanding task.”", author: "Cal Newport" }
+];
+let currentQuoteIndex = 0;
+
+function cycleFocusQuote() {
+  const quoteTextEl = document.getElementById("idleQuoteText");
+  const quoteAuthorEl = document.getElementById("idleQuoteAuthor");
+  if (!quoteTextEl || !quoteAuthorEl) return;
+
+  const quote = FOCUS_QUOTES[currentQuoteIndex % FOCUS_QUOTES.length];
+  currentQuoteIndex++;
+  quoteTextEl.textContent = quote.text;
+  quoteAuthorEl.textContent = `— ${quote.author.toUpperCase()}`;
+}
+
+// --- Fullscreen Engine ---
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    const docEl = document.documentElement;
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(() => {});
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
+  }
+}
+
+function updateFullscreenUI() {
+  const isFs = !!document.fullscreenElement;
+  document.body.classList.toggle("is-fullscreen", isFs);
+  const btn = document.getElementById("fullscreenToggleBtn");
+  if (btn) {
+    btn.setAttribute("title", isFs ? "Exit Fullscreen (F)" : "Toggle Fullscreen (F)");
+    btn.setAttribute("aria-label", isFs ? "Exit Fullscreen (F)" : "Toggle Fullscreen (F)");
+  }
+}
+
+// --- Light / Dark Theme Engine ---
+function applyTheme(theme) {
+  const isLight = theme === "light";
+  document.body.classList.toggle("light-theme", isLight);
+  localStorage.setItem("sonus_theme", theme);
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute("content", isLight ? "#f5f5f7" : "#050507");
+  }
+
+  // Update SVG curve fill gradient stop colors
+  const gradStop0 = document.getElementById("gradStop0");
+  const gradStop1 = document.getElementById("gradStop1");
+  const gradStop2 = document.getElementById("gradStop2");
+  if (gradStop0 && gradStop1 && gradStop2) {
+    const col = isLight ? "#000000" : "#ffffff";
+    gradStop0.setAttribute("stop-color", col);
+    gradStop1.setAttribute("stop-color", col);
+    gradStop2.setAttribute("stop-color", col);
+  }
+
+  const btn = document.getElementById("themeToggleBtn");
+  if (btn) {
+    btn.setAttribute("title", isLight ? "Switch to Dark Mode (T)" : "Switch to Light Mode (T)");
+    btn.setAttribute("aria-label", isLight ? "Switch to Dark Mode (T)" : "Switch to Light Mode (T)");
+  }
+}
+
+function toggleTheme() {
+  const current = document.body.classList.contains("light-theme") ? "light" : "dark";
+  const next = current === "light" ? "dark" : "light";
+  applyTheme(next);
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("sonus_theme");
+  if (saved === "light") {
+    applyTheme("light");
+  } else {
+    applyTheme("dark");
   }
 }
 
@@ -756,6 +868,12 @@ function setupKeyboardShortcuts() {
     } else if (e.code === "KeyR") {
       e.preventDefault();
       resetCurveFlat();
+    } else if (e.code === "KeyF") {
+      e.preventDefault();
+      toggleFullscreen();
+    } else if (e.code === "KeyT") {
+      e.preventDefault();
+      toggleTheme();
     } else if (e.key >= "1" && e.key <= "6") {
       const idx = parseInt(e.key, 10) - 1;
       if (PRESETS[idx]) {
@@ -794,6 +912,7 @@ function resetIdleTimer() {
   // Only trigger stillness fade if user is not dragging an EQ handle and near top
   idleTimer = setTimeout(() => {
     if (draggingIndex === null && window.scrollY <= 140) {
+      cycleFocusQuote();
       document.body.classList.add("is-idle");
     }
   }, IDLE_DELAY_MS);
@@ -833,10 +952,25 @@ function initEvents() {
 
   muteToggleBtn.addEventListener("click", toggleMute);
   window.addEventListener("resize", renderCurve);
+
+  const themeToggleBtn = document.getElementById("themeToggleBtn");
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", toggleTheme);
+  }
+
+  const fullscreenToggleBtn = document.getElementById("fullscreenToggleBtn");
+  if (fullscreenToggleBtn) {
+    fullscreenToggleBtn.addEventListener("click", toggleFullscreen);
+  }
+
+  document.addEventListener("fullscreenchange", updateFullscreenUI);
+  document.addEventListener("webkitfullscreenchange", updateFullscreenUI);
 }
 
 // --- App Bootstrap ---
 function boot() {
+  initTheme();
+  cycleFocusQuote();
   initNodesAndAxis();
   renderPresetsGrid();
   renderCurve();
