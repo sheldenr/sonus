@@ -160,16 +160,12 @@ a {
 
 .wordmark {
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: -0.05em;
   color: var(--text-primary);
   display: inline-flex;
   align-items: baseline;
   transition: opacity 0.2s ease;
-}
-
-.wordmark:hover {
-  opacity: 0.8;
 }
 
 .wordmark span {
