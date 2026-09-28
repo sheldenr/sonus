@@ -267,6 +267,10 @@ function applyPreset(index) {
   if (currentPresetName) currentPresetName.textContent = preset.name;
   if (presetsActiveMode) presetsActiveMode.textContent = preset.desc;
 
+  if (isPlaying && audio && audio.context && audio.context.state !== "running") {
+    audio.context.resume().catch(() => {});
+  }
+
   // Crossfade noise generator buffer type (450ms fade)
   setNoiseType(preset.noise, 0.45);
 
@@ -289,10 +293,101 @@ function updatePresetTitle(customTitle, subTitle = "hand shaped") {
   document.querySelectorAll(".preset-pill").forEach(pill => pill.classList.remove("active"));
 }
 
+// --- Mobile WebKit / iOS Audio Session & Hardware Silent Mode Fix ---
+let silentAudioEl = null;
+
+function getSilentAudio() {
+  if (!silentAudioEl) {
+    silentAudioEl = document.createElement("audio");
+    silentAudioEl.setAttribute("loop", "true");
+    silentAudioEl.setAttribute("playsinline", "true");
+    silentAudioEl.setAttribute("webkit-playsinline", "true");
+    // 44.1kHz mono silent WAV data URI (forces iOS AVAudioSessionCategoryPlayback so audio plays even in Silent Mode)
+    silentAudioEl.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+    silentAudioEl.style.display = "none";
+    document.body.appendChild(silentAudioEl);
+  }
+  return silentAudioEl;
+}
+
+function enableAudioSessionPlayback() {
+  try {
+    if (typeof navigator !== "undefined" && "audioSession" in navigator) {
+      navigator.audioSession.type = "playback";
+    }
+  } catch (_) {}
+
+  try {
+    const el = getSilentAudio();
+    const playPromise = el.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {});
+    }
+  } catch (_) {}
+}
+
+function disableAudioSessionPlayback() {
+  try {
+    if (silentAudioEl) {
+      silentAudioEl.pause();
+    }
+  } catch (_) {}
+}
+
+// --- Mobile WebKit Audio Unlock Engine (One-Time User Gesture) ---
+let audioUnlocked = false;
+
+function unlockAudioContext() {
+  if (audioUnlocked) return;
+
+  enableAudioSessionPlayback();
+
+  if (!audio) {
+    initAudioSystem();
+  }
+
+  if (audio && audio.context) {
+    if (audio.context.state !== "running") {
+      audio.context.resume().catch(() => {});
+    }
+
+    // Prime WebKit audio thread with an instantaneous dummy buffer
+    try {
+      const dummy = audio.context.createBuffer(1, 1, audio.context.sampleRate || 44100);
+      const dummySource = audio.context.createBufferSource();
+      dummySource.buffer = dummy;
+      dummySource.connect(audio.context.destination);
+      dummySource.start(0);
+    } catch (_) {}
+
+    audio.context.resume().then(() => {
+      if (audio.context.state === "running") {
+        audioUnlocked = true;
+        removeUnlockListeners();
+      }
+    }).catch(() => {});
+  }
+}
+
+function removeUnlockListeners() {
+  const events = ["touchstart", "touchend", "click"];
+  events.forEach(evt => {
+    document.removeEventListener(evt, unlockAudioContext, true);
+  });
+}
+
+function setupUnlockListeners() {
+  const events = ["touchstart", "touchend", "click"];
+  events.forEach(evt => {
+    document.addEventListener(evt, unlockAudioContext, { capture: true, passive: true });
+  });
+}
+
 // --- High-Fidelity Audio Synthesis Engine ---
 function createNoiseBuffer(context, type) {
-  const bufferSize = context.sampleRate * 4;
-  const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+  const sampleRate = context.sampleRate || 44100;
+  const bufferSize = Math.floor(sampleRate * 4);
+  const buffer = context.createBuffer(1, bufferSize, sampleRate);
   const data = buffer.getChannelData(0);
 
   if (type === "brown") {
@@ -328,8 +423,17 @@ function createNoiseBuffer(context, type) {
 }
 
 function initAudioSystem() {
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  const context = new AudioContext();
+  if (audio) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  let context;
+  try {
+    context = new AudioContextClass();
+  } catch (err) {
+    console.warn("Failed to create AudioContext:", err);
+    return;
+  }
 
   const source = context.createBufferSource();
   source.buffer = createNoiseBuffer(context, currentNoiseType);
@@ -369,7 +473,14 @@ function initAudioSystem() {
   masterGain.connect(context.destination);
 
   analyserData = new Uint8Array(analyser.frequencyBinCount);
-  source.start();
+  source.start(0);
+
+  // Mobile WebKit interruption / state recovery
+  context.onstatechange = () => {
+    if (isPlaying && context.state !== "running" && document.visibilityState === "visible") {
+      context.resume().catch(() => {});
+    }
+  };
 
   audio = { context, source, sourceGain, filters, analyser, masterGain };
 }
@@ -388,10 +499,16 @@ function rampAudioFilters(targetValues, duration = 0.45) {
   const ctx = audio.context;
   const now = ctx.currentTime;
   targetValues.forEach((val, i) => {
-    const filterGain = audio.filters[i].gain;
-    filterGain.cancelScheduledValues(now);
-    filterGain.setValueAtTime(filterGain.value, now);
-    filterGain.linearRampToValueAtTime(val, now + duration);
+    try {
+      const filterGain = audio.filters[i].gain;
+      filterGain.cancelScheduledValues(now);
+      filterGain.setValueAtTime(filterGain.value, now);
+      filterGain.linearRampToValueAtTime(val, now + duration);
+    } catch (_) {
+      try {
+        audio.filters[i].gain.value = val;
+      } catch (__) {}
+    }
   });
 }
 
@@ -418,7 +535,7 @@ function setNoiseType(type, fadeDuration = 0.45) {
 
     newSource.connect(newSourceGain);
     newSourceGain.connect(audio.filters[0]);
-    newSource.start();
+    newSource.start(0);
 
     const oldSource = audio.source;
     const oldGain = audio.sourceGain;
@@ -431,7 +548,7 @@ function setNoiseType(type, fadeDuration = 0.45) {
 
     setTimeout(() => {
       try {
-        oldSource.stop();
+        oldSource.stop(0);
         oldSource.disconnect();
         if (oldGain) oldGain.disconnect();
       } catch (_) {}
@@ -443,7 +560,7 @@ function setNoiseType(type, fadeDuration = 0.45) {
     // Audio is paused: cleanly re-create buffer source ready for startPlayback
     try {
       if (audio.source) {
-        audio.source.stop();
+        audio.source.stop(0);
         audio.source.disconnect();
       }
       if (audio.sourceGain) {
@@ -461,25 +578,43 @@ function setNoiseType(type, fadeDuration = 0.45) {
 
     newSource.connect(newSourceGain);
     newSourceGain.connect(audio.filters[0]);
-    newSource.start();
+    newSource.start(0);
 
     audio.source = newSource;
     audio.sourceGain = newSourceGain;
   }
 }
 
+let pauseTimeoutId = null;
+
 async function startPlayback() {
+  if (pauseTimeoutId) {
+    clearTimeout(pauseTimeoutId);
+    pauseTimeoutId = null;
+  }
+
+  // Ensure iOS media session category is playback (unmuted by silent switch)
+  enableAudioSessionPlayback();
+
   if (!audio) {
     initAudioSystem();
   }
 
-  if (audio.context.state === "suspended") {
-    await audio.context.resume();
+  // Mobile WebKit may have state 'suspended' or 'interrupted'
+  if (audio && audio.context && audio.context.state !== "running") {
+    try {
+      await audio.context.resume();
+    } catch (_) {}
   }
 
+  if (!audio) return;
+
+  const now = audio.context.currentTime;
   const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
-  audio.masterGain.gain.setValueAtTime(audio.masterGain.gain.value, audio.context.currentTime);
-  audio.masterGain.gain.linearRampToValueAtTime(targetGain, audio.context.currentTime + 0.25);
+
+  audio.masterGain.gain.cancelScheduledValues(now);
+  audio.masterGain.gain.setValueAtTime(audio.masterGain.gain.value, now);
+  audio.masterGain.gain.setTargetAtTime(targetGain, now, 0.05);
 
   isPlaying = true;
   updatePlayButtonUI(true);
@@ -488,18 +623,47 @@ async function startPlayback() {
 function pausePlayback() {
   if (!audio) return;
 
-  audio.masterGain.gain.setValueAtTime(audio.masterGain.gain.value, audio.context.currentTime);
-  audio.masterGain.gain.linearRampToValueAtTime(0.001, audio.context.currentTime + 0.2);
+  if (pauseTimeoutId) {
+    clearTimeout(pauseTimeoutId);
+    pauseTimeoutId = null;
+  }
 
-  setTimeout(() => {
-    if (!isPlaying && audio) {
-      audio.context.suspend();
+  const now = audio.context.currentTime;
+  audio.masterGain.gain.cancelScheduledValues(now);
+  audio.masterGain.gain.setValueAtTime(audio.masterGain.gain.value, now);
+  audio.masterGain.gain.setTargetAtTime(0, now, 0.04);
+
+  disableAudioSessionPlayback();
+
+  pauseTimeoutId = setTimeout(() => {
+    if (!isPlaying && audio && audio.context && audio.context.state === "running") {
+      audio.context.suspend().catch(() => {});
     }
+    pauseTimeoutId = null;
   }, 220);
 
   isPlaying = false;
   updatePlayButtonUI(false);
 }
+
+// --- Mobile WebKit / Background State Lifecycle Recovery ---
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && isPlaying && audio && audio.context) {
+    if (audio.context.state !== "running") {
+      audio.context.resume().catch(() => {});
+    }
+    enableAudioSessionPlayback();
+  }
+});
+
+window.addEventListener("pageshow", () => {
+  if (isPlaying && audio && audio.context) {
+    if (audio.context.state !== "running") {
+      audio.context.resume().catch(() => {});
+    }
+    enableAudioSessionPlayback();
+  }
+});
 
 function togglePlayback() {
   if (isPlaying) {
@@ -742,7 +906,9 @@ function setMasterVolume(val) {
   }
 
   if (audio && isPlaying) {
-    audio.masterGain.gain.setTargetAtTime(masterVolume * PAGE_LOUDNESS_SCALE, audio.context.currentTime, 0.03);
+    const now = audio.context.currentTime;
+    audio.masterGain.gain.cancelScheduledValues(now);
+    audio.masterGain.gain.setTargetAtTime(masterVolume * PAGE_LOUDNESS_SCALE, now, 0.03);
   }
 }
 
@@ -751,23 +917,75 @@ function toggleMute() {
   muteToggleBtn.classList.toggle("muted", isMuted);
 
   if (audio && isPlaying) {
+    const now = audio.context.currentTime;
     const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
-    audio.masterGain.gain.setTargetAtTime(targetGain, audio.context.currentTime, 0.03);
+    audio.masterGain.gain.cancelScheduledValues(now);
+    audio.masterGain.gain.setTargetAtTime(targetGain, now, 0.03);
   }
 }
 
 // --- Ambient Stillness Focus Quotes ---
 const FOCUS_QUOTES = [
-  { text: "“Silence is not the absence of sound, but the presence of stillness.”", author: "Acoustic Reflection" },
-  { text: "“In the silence behind the noise, clarity awaits.”", author: "Stillness" },
-  { text: "“Simplicity is the ultimate sophistication.”", author: "Leonardo da Vinci" },
-  { text: "“The quieter you become, the more you are able to hear.”", author: "Rumi" },
-  { text: "“Stillness is where creativity and solutions to problems are found.”", author: "Eckhart Tolle" },
-  { text: "“Music is the silence between the notes.”", author: "Claude Debussy" },
-  { text: "“Order and simplification are the first steps toward mastery.”", author: "Thomas Mann" },
-  { text: "“Muddy water is best cleared by leaving it alone.”", author: "Alan Watts" },
-  { text: "“Quiet the noise, focus the craft.”", author: "Sonus Philosophy" },
-  { text: "“Deep work is the ability to focus without distraction on a demanding task.”", author: "Cal Newport" }
+  { text: "“Change is the end result of all true learning.”", author: "Leo Buscaglia" },
+  { text: "“The roots of education are bitter, but the fruit is sweet.”", author: "Aristotle" },
+  { text: "“It is the mark of an educated mind to be able to entertain a thought without accepting it.”", author: "Aristotle" },
+  { text: "“Education is the key to unlock the golden door of freedom.”", author: "George Washington Carver" },
+  { text: "“A person who won't read has no advantage over one who can't read.”", author: "Mark Twain" },
+  { text: "“Formal education will make you a living; self-education will make you a fortune.”", author: "Jim Rohn" },
+  { text: "“The whole purpose of education is to turn mirrors into windows.”", author: "Sydney J. Harris" },
+  { text: "“I tell students that the opportunities I had were a result of having a good educational background. Education is what allows you to stand out.”", author: "Ellen Ochoa" },
+  { text: "“The Democratic position seems to be everything is going to be free. Free education. Free health care. Free housing. Free love. Free kittens, I don't know.”", author: "John Kennedy" },
+  { text: "“The giving of love is an education in itself.”", author: "Eleanor Roosevelt" },
+  { text: "“There is no end to education. It is not that you read a book, pass an examination, and finish with education. The whole of life, from the moment you are born to the moment you die, is a process of learning.”", author: "Jiddu Krishnamurti" },
+  { text: "“Education is a weapon whose effects depend on who holds it in his hands and at whom it is aimed.”", author: "Joseph Stalin" },
+  { text: "“A man who has never gone to school may steal from a freight car; but if he has a university education, he may steal the whole railroad.”", author: "Theodore Roosevelt" },
+  { text: "“I've never known any trouble than an hour's reading didn't assuage.”", author: "Arthur Schopenhauer" },
+  { text: "“Education must not simply teach work - it must teach Life.”", author: "W. E. B. Du Bois" },
+  { text: "“What sculpture is to a block of marble, education is to the soul.”", author: "Joseph Addison" },
+  { text: "“A library is the delivery room for the birth of ideas, a place where history comes to life.”", author: "Norman Cousins" },
+  { text: "“Intellectual growth should commence at birth and cease only at death.”", author: "Albert Einstein" },
+  { text: "“I am a part of everything that I have read.”", author: "Theodore Roosevelt" },
+  { text: "“Education is the most powerful weapon which you can use to change the world.”", author: "Nelson Mandela" },
+  { text: "“The function of education is to teach one to think intensively and to think critically. Intelligence plus character - that is the goal of true education.”", author: "Martin Luther King, Jr." },
+  { text: "“Give a man a fish and you feed him for a day; teach a man to fish and you feed him for a lifetime.”", author: "Maimonides" },
+  { text: "“To educate a man in mind and not in morals is to educate a menace to society.”", author: "Theodore Roosevelt" },
+  { text: "“Education is what remains after one has forgotten what one has learned in school.”", author: "Albert Einstein" },
+  { text: "“Knowledge is power. Information is liberating. Education is the premise of progress, in every society, in every family.”", author: "Kofi Annan" },
+  { text: "“Education is not preparation for life; education is life itself.”", author: "John Dewey" },
+  { text: "“My mother said I must always be intolerant of ignorance but understanding of illiteracy. That some people, unable to go to school, were more educated and more intelligent than college professors.”", author: "Maya Angelou" },
+  { text: "“I believe that every American should have stable, dignified housing; health care; education - that the most very basic needs to sustain modern life should be guaranteed in a moral society.”", author: "Alexandria Ocasio-Cortez" },
+  { text: "“Democracy cannot succeed unless those who express their choice are prepared to choose wisely. The real safeguard of democracy, therefore, is education.”", author: "Franklin D. Roosevelt" },
+  { text: "“Education is the ability to listen to almost anything without losing your temper or your self-confidence.”", author: "Robert Frost" },
+  { text: "“Learning is not attained by chance, it must be sought for with ardor and diligence.”", author: "Abigail Adams" },
+  { text: "“The foundation of every state is the education of its youth.”", author: "Diogenes" },
+  { text: "“You have to stay in school. You have to. You have to go to college. You have to get your degree. Because that's the one thing people can't take away from you is your education. And it is worth the investment.”", author: "Michelle Obama" },
+  { text: "“The greatest education in the world is watching the masters at work.”", author: "Michael Jackson" },
+  { text: "“The illiterate of the future will not be the person who cannot read. It will be the person who does not know how to learn.”", author: "Alvin Toffler" },
+  { text: "“A thorough knowledge of the Bible is worth more than a college education.”", author: "Theodore Roosevelt" },
+  { text: "“You are always a student, never a master. You have to keep moving forward.”", author: "Conrad Hall" },
+  { text: "“Until justice is blind to color, until education is unaware of race, until opportunity is unconcerned with the color of men's skins, emancipation will be a proclamation but not a fact.”", author: "Lyndon B. Johnson" },
+  { text: "“Education is an admirable thing, but it is well to remember from time to time that nothing that is worth knowing can be taught.”", author: "Oscar Wilde" },
+  { text: "“I would rather entertain and hope that people learned something than educate people and hope they were entertained.”", author: "Walt Disney" },
+  { text: "“The purpose of education is to make good human beings with skill and expertise... Enlightened human beings can be created by teachers.”", author: "A. P. J. Abdul Kalam" },
+  { text: "“Nothing in this world can take the place of persistence. Talent will not: nothing is more common than unsuccessful men with talent. Genius will not; unrewarded genius is almost a proverb. Education will not: the world is full of educated derelicts. Persistence and determination alone are omnipotent.”", author: "Calvin Coolidge" },
+  { text: "“An investment in knowledge pays the best interest.”", author: "Benjamin Franklin" },
+  { text: "“I have no special talent. I am only passionately curious.”", author: "Albert Einstein" },
+  { text: "“The philosophy of the school room in one generation will be the philosophy of government in the next.”", author: "Abraham Lincoln" },
+  { text: "“In the first place, God made idiots. That was for practice. Then he made school boards.”", author: "Mark Twain" },
+  { text: "“Develop a passion for learning. If you do, you will never cease to grow.”", author: "Anthony J. D'Angelo" },
+  { text: "“Education is not the filling of a pail, but the lighting of a fire.”", author: "William Butler Yeats" },
+  { text: "“Man is what he reads.”", author: "Joseph Brodsky" },
+  { text: "“Until we get equality in education, we won't have an equal society.”", author: "Sonia Sotomayor" },
+  { text: "“Education is a progressive discovery of our own ignorance.”", author: "Will Durant" },
+  { text: "“Education's purpose is to replace an empty mind with an open one.”", author: "Malcolm Forbes" },
+  { text: "“Data is not information, information is not knowledge, knowledge is not understanding, understanding is not wisdom.”", author: "Clifford Stoll" },
+  { text: "“Don't limit a child to your own learning, for he was born in another time.”", author: "Rabindranath Tagore" },
+  { text: "“A fool's brain digests philosophy into folly, science into superstition, and art into pedantry. Hence University education.”", author: "George Bernard Shaw" },
+  { text: "“The only person who is educated is the one who has learned how to learn and change.”", author: "Carl Rogers" },
+  { text: "“Education is the movement from darkness to light.”", author: "Allan Bloom" },
+  { text: "“Education is for improving the lives of others and for leaving your community and world better than you found it.”", author: "Marian Wright Edelman" },
+  { text: "“Cauliflower is nothing but cabbage with a college education.”", author: "Mark Twain" },
+  { text: "“Everybody is ignorant, only on different subjects.”", author: "Will Rogers" }
 ];
 let currentQuoteIndex = 0;
 
@@ -978,6 +1196,7 @@ function boot() {
   setupKeyboardShortcuts();
   initEvents();
   initIdleDetector();
+  setupUnlockListeners();
   tick();
   setInterval(tick, 1000);
   requestAnimationFrame(animationLoop);

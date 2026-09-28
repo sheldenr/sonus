@@ -675,6 +675,17 @@ kbd {
   text-align: left;
 }
 
+.preset-pill,
+.preset-pill:hover,
+.preset-pill:active,
+.preset-pill.active,
+body.light-theme .preset-pill,
+body.light-theme .preset-pill:hover,
+body.light-theme .preset-pill:active,
+body.light-theme .preset-pill.active {
+  box-shadow: none !important;
+}
+
 .preset-pill-name {
   font-size: 12px;
   font-weight: 600;
