@@ -12,9 +12,9 @@ const BANDS = [
   { label: "1 kHz", freq: 1000, binMin: 10, binMax: 20 },
   { label: "2 kHz", freq: 2000, binMin: 20, binMax: 40 },
   { label: "4 kHz", freq: 4000, binMin: 40, binMax: 80 },
-  { label: "8 kHz", freq: 8000 },
-  { label: "12 kHz", freq: 12000 },
-  { label: "16 kHz", freq: 16000 }
+  { label: "8 kHz", freq: 8000, binMin: 80, binMax: 140 },
+  { label: "12 kHz", freq: 12000, binMin: 130, binMax: 190 },
+  { label: "16 kHz", freq: 16000, binMin: 180, binMax: 240 }
 ];
 
 // --- 17 Curated Presets ---
@@ -63,8 +63,17 @@ let dragRect = null;
 let pendingDragY = null;
 let dragFrameId = null;
 let audio = null;
+let analyserData = null;
 let audioNeedsSync = false;
 let curveAnimationId = null;
+
+// Backdrop canvas & visualizer state
+let eqBackdropCanvas = null;
+let backdropCtx = null;
+let canvasWidth = 0;
+let canvasHeight = 0;
+let canvasDpr = 1;
+let visualizerAnimId = null;
 
 // --- DOM Elements ---
 const clockDisplay = document.getElementById("clockDisplay");
@@ -237,6 +246,73 @@ function renderCurve({ updateHandles = true, updateAccessibility = true } = {}) 
       axisLabel.classList.toggle("active", Math.abs(eqValues[i]) >= 3 || draggingIndex === i);
     }
   });
+
+  if (!isPlaying) {
+    drawCanvasVisuals();
+  }
+}
+
+// --- Procedural Random Surprise Preset Generator ---
+function generateSurprisePreset() {
+  const noiseTypes = ["brown", "pink", "white"];
+  const noise = noiseTypes[Math.floor(Math.random() * noiseTypes.length)];
+
+  // Choose from 4 procedural sculpting styles for musical diversity
+  const style = Math.floor(Math.random() * 4);
+  const values = [];
+
+  if (style === 0) {
+    // Style 0: Organic wandering walk (drifting contours)
+    let cur = Math.random() * 12 - 6;
+    for (let i = 0; i < BANDS.length; i++) {
+      cur += Math.random() * 8 - 4;
+      cur = Math.max(-10, Math.min(10, cur));
+      values.push(Math.round(cur * 2) / 2);
+    }
+  } else if (style === 1) {
+    // Style 1: Resonant harmonic peaks & valleys
+    const center1 = Math.floor(Math.random() * 5);
+    const center2 = 5 + Math.floor(Math.random() * 5);
+    const amp1 = 5 + Math.random() * 6;
+    const amp2 = (Math.random() > 0.5 ? 1 : -1) * (4 + Math.random() * 6);
+    for (let i = 0; i < BANDS.length; i++) {
+      const d1 = Math.abs(i - center1);
+      const d2 = Math.abs(i - center2);
+      const v = amp1 * Math.exp(-(d1 * d1) / 2.2) + amp2 * Math.exp(-(d2 * d2) / 2.2) + (Math.random() * 2.5 - 1.25);
+      values.push(Math.max(-11, Math.min(11, Math.round(v * 2) / 2)));
+    }
+  } else if (style === 2) {
+    // Style 2: Sculpted tilt / scoop
+    const tilt = Math.random() * 16 - 8;
+    const scoop = Math.random() * 14 - 7;
+    for (let i = 0; i < BANDS.length; i++) {
+      const norm = (i - 4.5) / 4.5;
+      const v = norm * tilt + (1 - norm * norm) * scoop + (Math.random() * 2 - 1);
+      values.push(Math.max(-11, Math.min(11, Math.round(v * 2) / 2)));
+    }
+  } else {
+    // Style 3: Multi-wave ripple
+    const freq = 1 + Math.random() * 1.8;
+    const phase = Math.random() * Math.PI * 2;
+    const depth = 4 + Math.random() * 6;
+    for (let i = 0; i < BANDS.length; i++) {
+      const v = Math.sin((i / (BANDS.length - 1)) * Math.PI * 2 * freq + phase) * depth + (Math.random() * 2 - 1);
+      values.push(Math.max(-11, Math.min(11, Math.round(v * 2) / 2)));
+    }
+  }
+
+  const descriptors = [
+    "let it wander",
+    "drifting soundscape",
+    "harmonic anomaly",
+    "deep morph",
+    "spectral drift",
+    "organic resonance",
+    "serendipity"
+  ];
+  const desc = `${noise} / ${descriptors[Math.floor(Math.random() * descriptors.length)]}`;
+
+  return { noise, values, desc };
 }
 
 // --- Smooth Visual Curve Transition Engine ---
@@ -244,6 +320,13 @@ function renderCurve({ updateHandles = true, updateAccessibility = true } = {}) 
 function applyPreset(index) {
   activePresetIndex = index;
   const preset = PRESETS[index];
+
+  if (preset.name.includes("Surprise")) {
+    const surprise = generateSurprisePreset();
+    preset.noise = surprise.noise;
+    preset.values = surprise.values;
+    preset.desc = surprise.desc;
+  }
 
   if (currentPresetName) currentPresetName.textContent = preset.name;
   if (presetsActiveMode) presetsActiveMode.textContent = preset.desc;
@@ -493,13 +576,20 @@ function initAudioSystem() {
   // Equalizer Biquad Filters Chain (10 Bands)
   const filters = createFilterChain(context, eqValues);
 
-  // Simple audio graph: source -> filters -> master -> destination
+  // Fast Fourier Transform (FFT) Analyser Node
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.82;
+  analyserData = new Uint8Array(analyser.frequencyBinCount);
+
+  // Audio graph: source -> sourceGain -> filters -> analyser -> masterGain -> destination
   source.connect(sourceGain);
   sourceGain.connect(filters[0]);
   for (let i = 0; i < filters.length - 1; i++) {
     filters[i].connect(filters[i + 1]);
   }
-  filters[filters.length - 1].connect(masterGain);
+  filters[filters.length - 1].connect(analyser);
+  analyser.connect(masterGain);
   masterGain.connect(context.destination);
 
   source.start(0);
@@ -511,7 +601,7 @@ function initAudioSystem() {
     }
   };
 
-  audio = { context, source, sourceGain, filters, masterGain };
+  audio = { context, source, sourceGain, filters, analyser, masterGain };
 }
 
 function createFilterChain(context, values) {
@@ -683,6 +773,8 @@ async function startPlayback() {
 
   isPlaying = true;
   updatePlayButtonUI(true);
+  startSessionTimer();
+  startVisualizer();
 }
 
 function pausePlayback() {
@@ -705,19 +797,30 @@ function pausePlayback() {
       audio.context.suspend().catch(() => {});
     }
     pauseTimeoutId = null;
-  }, 220);
+  }, 450);
 
   isPlaying = false;
   updatePlayButtonUI(false);
+  pauseSessionTimer();
+  stopVisualizer(false);
 }
 
 // --- Mobile WebKit / Background State Lifecycle Recovery ---
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && isPlaying && audio && audio.context) {
-    if (audio.context.state !== "running") {
-      audio.context.resume().catch(() => {});
+  if (document.visibilityState === "visible") {
+    if (isPlaying && audio && audio.context) {
+      if (audio.context.state !== "running") {
+        audio.context.resume().catch(() => {});
+      }
+      enableAudioSessionPlayback();
+      startVisualizer();
     }
-    enableAudioSessionPlayback();
+  } else {
+    // Suspend visualizer animation loop while tab is hidden to save power
+    if (visualizerAnimId !== null) {
+      cancelAnimationFrame(visualizerAnimId);
+      visualizerAnimId = null;
+    }
   }
 });
 
@@ -900,10 +1003,390 @@ function setupPointerInteraction() {
   });
 }
 
-// --- Clock Engine ---
+// --- Live Audio Reactive Spectrum Canvas & Static Sound Wave ---
+function initBackdropCanvas() {
+  eqBackdropCanvas = document.getElementById("eqBackdropCanvas");
+  if (!eqBackdropCanvas) return;
+  backdropCtx = eqBackdropCanvas.getContext("2d");
+  resizeBackdropCanvas();
+}
+
+function resizeBackdropCanvas() {
+  if (!eqBackdropCanvas) return;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const rect = eqBackdropCanvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  canvasWidth = rect.width;
+  canvasHeight = rect.height;
+  canvasDpr = dpr;
+
+  const pixelWidth = Math.round(canvasWidth * dpr);
+  const pixelHeight = Math.round(canvasHeight * dpr);
+
+  if (eqBackdropCanvas.width !== pixelWidth || eqBackdropCanvas.height !== pixelHeight) {
+    eqBackdropCanvas.width = pixelWidth;
+    eqBackdropCanvas.height = pixelHeight;
+  }
+
+  drawCanvasVisuals();
+}
+
+function getSplineSegments(width, height) {
+  const svgWidth = 1000;
+  const svgHeight = 360;
+  const marginX = 55;
+  const plotWidth = svgWidth - marginX * 2;
+  const centerY = height / 2;
+  const maxAmp = centerY - (32 / svgHeight) * height;
+
+  const bandPoints = [];
+  for (let i = 0; i < BANDS.length; i++) {
+    const normX = (marginX + (i / (BANDS.length - 1)) * plotWidth) / svgWidth;
+    const x = normX * width;
+    const y = centerY - (eqValues[i] / 12) * maxAmp;
+    bandPoints.push([x, y]);
+  }
+
+  const edgeLeft = [0, bandPoints[0][1]];
+  const edgeRight = [width, bandPoints[bandPoints.length - 1][1]];
+  return [edgeLeft, ...bandPoints, edgeRight];
+}
+
+function evaluateSplineY(allPoints, x) {
+  const n = allPoints.length;
+  if (n < 2) return 0;
+  if (x <= allPoints[0][0]) return allPoints[0][1];
+  if (x >= allPoints[n - 1][0]) return allPoints[n - 1][1];
+
+  let k = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (x >= allPoints[i][0] && x <= allPoints[i + 1][0]) {
+      k = i;
+      break;
+    }
+  }
+
+  const p0 = allPoints[Math.max(k - 1, 0)];
+  const p1 = allPoints[k];
+  const p2 = allPoints[k + 1];
+  const p3 = allPoints[Math.min(k + 2, n - 1)];
+
+  const segWidth = p2[0] - p1[0];
+  const u = segWidth > 0 ? (x - p1[0]) / segWidth : 0;
+  const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+  const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+
+  const u1 = 1 - u;
+  return (u1 * u1 * u1 * p1[1]) +
+         (3 * u1 * u1 * u * cp1y) +
+         (3 * u1 * u * u * cp2y) +
+         (u * u * u * p2[1]);
+}
+
+let wavePhase = 0;
+let visualizerPresence = 0; // 0 = completely settled at bottom / invisible, 1 = fully active and elevated
+
+function drawCanvasVisuals() {
+  if (!backdropCtx || canvasWidth === 0 || canvasHeight === 0) return;
+
+  const width = canvasWidth;
+  const height = canvasHeight;
+
+  backdropCtx.save();
+  backdropCtx.clearRect(0, 0, eqBackdropCanvas.width, eqBackdropCanvas.height);
+
+  // If completely settled or engine absent, stay completely clean and invisible
+  if (visualizerPresence <= 0.001 || !audio || !analyserData) {
+    backdropCtx.restore();
+    return;
+  }
+
+  backdropCtx.scale(canvasDpr, canvasDpr);
+  backdropCtx.globalAlpha = Math.min(1, Math.max(0, visualizerPresence));
+
+  const isLight = document.body.classList.contains("light-theme");
+  const splineSegments = getSplineSegments(width, height);
+
+  if (isPlaying && !isMuted) {
+    audio.analyser.getByteFrequencyData(analyserData);
+  }
+
+  const numPoints = Math.min(240, Math.max(120, Math.floor(width / 4.5)));
+  const step = width / (numPoints - 1);
+  const primaryWavePoints = [];
+  const minBandX = splineSegments[1][0];
+  const maxBandX = splineSegments[splineSegments.length - 2][0];
+  const bandSpan = maxBandX - minBandX;
+  const centerY = height / 2;
+
+  // Cache band energies from analyser
+  const bandEnergies = [];
+  for (let b = 0; b < BANDS.length; b++) {
+    const band = BANDS[b];
+    let sum = 0;
+    let count = 0;
+    const maxBin = Math.min(band.binMax || 200, analyserData.length - 1);
+    const minBin = band.binMin || 0;
+    for (let bin = minBin; bin <= maxBin; bin++) {
+      sum += analyserData[bin];
+      count++;
+    }
+    bandEnergies.push(count > 0 ? (sum / count) / 255 : 0.3);
+  }
+
+  for (let i = 0; i < numPoints; i++) {
+    const x = i * step;
+    const lineY = evaluateSplineY(splineSegments, x);
+    const lineOffset = lineY - centerY;
+
+    // Target baseline: anchored further down (~81% of canvas height), subtle and understated
+    const targetBaseLowerY = height * 0.81 + (lineOffset * 0.40);
+    // Smooth settling movement down to the bottom (height) when pausing
+    const baseLowerY = height - (height - targetBaseLowerY) * visualizerPresence;
+
+    // Map x to frequency bands for acoustic responsiveness
+    const t = Math.max(0, Math.min(1, bandSpan > 0 ? (x - minBandX) / bandSpan : i / (numPoints - 1)));
+    const bFloat = t * (BANDS.length - 1);
+    const b0 = Math.floor(bFloat);
+    const b1 = Math.min(BANDS.length - 1, b0 + 1);
+    const bFrac = bFloat - b0;
+    const energy = bandEnergies[b0] * (1 - bFrac) + bandEnergies[b1] * bFrac;
+
+    // Sample local FFT bin for subtle acoustic response
+    const band0 = BANDS[b0];
+    const band1 = BANDS[b1];
+    const bin0 = band0.binMin || 0;
+    const bin1 = band1.binMax || 200;
+    const binIdx = Math.min(analyserData.length - 1, Math.max(0, Math.round(bin0 + bFrac * (bin1 - bin0))));
+    const rawBinVal = analyserData[binIdx] / 255;
+
+    // Soft, delicate traveling wave harmonics
+    const normX = i / (numPoints - 1);
+    const w1 = Math.sin(normX * 18.0 * Math.PI - wavePhase * 1.8);
+    const w2 = Math.sin(normX * 36.0 * Math.PI + wavePhase * 2.8);
+    const w3 = Math.sin(normX * 68.0 * Math.PI - wavePhase * 3.8);
+    const waveShape = (w1 * 0.50 + w2 * 0.34 + w3 * 0.16);
+
+    // Much less apparent: very gentle whisper amplitude (only ~2.5-6px deflection)
+    const waveAmp = (2.0 + energy * 4.0 + rawBinVal * 1.2) * visualizerPresence;
+    const waveOscillation = waveShape * waveAmp;
+
+    const primaryY = Math.max(12, Math.min(height - 2, baseLowerY + waveOscillation));
+    primaryWavePoints.push({ x, y: primaryY });
+  }
+
+  // Smooth curve tracer using quadratic Bezier interpolation through midpoints
+  function traceSmoothPath(points) {
+    if (points.length < 2) return;
+    backdropCtx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length - 1; i++) {
+      const midX = (points[i].x + points[i + 1].x) * 0.5;
+      const midY = (points[i].y + points[i + 1].y) * 0.5;
+      backdropCtx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+    }
+    backdropCtx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+  }
+
+  // 1. Delicate, ultra-subtle translucent fill underneath the wave
+  backdropCtx.beginPath();
+  backdropCtx.moveTo(0, height);
+  backdropCtx.lineTo(primaryWavePoints[0].x, primaryWavePoints[0].y);
+  for (let i = 1; i < numPoints - 1; i++) {
+    const midX = (primaryWavePoints[i].x + primaryWavePoints[i + 1].x) * 0.5;
+    const midY = (primaryWavePoints[i].y + primaryWavePoints[i + 1].y) * 0.5;
+    backdropCtx.quadraticCurveTo(primaryWavePoints[i].x, primaryWavePoints[i].y, midX, midY);
+  }
+  backdropCtx.lineTo(primaryWavePoints[numPoints - 1].x, primaryWavePoints[numPoints - 1].y);
+  backdropCtx.lineTo(width, height);
+  backdropCtx.closePath();
+
+  const grad = backdropCtx.createLinearGradient(0, height * 0.55, 0, height);
+  if (isLight) {
+    grad.addColorStop(0, "rgba(0, 0, 0, 0.025)");
+    grad.addColorStop(0.6, "rgba(0, 0, 0, 0.005)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    backdropCtx.fillStyle = grad;
+    backdropCtx.fill();
+
+    // Primary wave crest stroke (delicate, faint whisper line)
+    backdropCtx.beginPath();
+    traceSmoothPath(primaryWavePoints);
+    backdropCtx.lineWidth = 0.8;
+    backdropCtx.lineJoin = "round";
+    backdropCtx.lineCap = "round";
+    backdropCtx.strokeStyle = "rgba(0, 0, 0, 0.12)";
+    backdropCtx.stroke();
+  } else {
+    grad.addColorStop(0, "rgba(255, 255, 255, 0.035)");
+    grad.addColorStop(0.6, "rgba(255, 255, 255, 0.008)");
+    grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+    backdropCtx.fillStyle = grad;
+    backdropCtx.fill();
+
+    // Primary wave crest stroke (delicate, faint whisper line)
+    backdropCtx.beginPath();
+    traceSmoothPath(primaryWavePoints);
+    backdropCtx.lineWidth = 0.8;
+    backdropCtx.lineJoin = "round";
+    backdropCtx.lineCap = "round";
+    backdropCtx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+    backdropCtx.stroke();
+  }
+
+  backdropCtx.restore();
+}
+
+function updateAcousticReactivity() {
+  if (!audio || !isPlaying || isMuted || !analyserData || visualizerPresence <= 0.001) {
+    if (curveHandles.length > 0) {
+      for (let i = 0; i < curveHandles.length; i++) {
+        const ring = curveHandles[i].firstElementChild;
+        if (ring && ring.style.transform) {
+          ring.style.transform = "";
+        }
+      }
+    }
+    return;
+  }
+
+  for (let i = 0; i < BANDS.length; i++) {
+    if (draggingIndex === i) continue;
+    const band = BANDS[i];
+    if (band.binMin === undefined || band.binMax === undefined) continue;
+
+    let bandSum = 0;
+    let count = 0;
+    const maxBin = Math.min(band.binMax, analyserData.length - 1);
+    for (let b = band.binMin; b <= maxBin; b++) {
+      bandSum += analyserData[b];
+      count++;
+    }
+    const bandEnergy = count > 0 ? (bandSum / count) / 255 : 0;
+    const handleEl = curveHandles[i];
+    if (handleEl) {
+      const ring = handleEl.firstElementChild;
+      if (ring) {
+        const scale = 1 + bandEnergy * 0.35 * visualizerPresence;
+        ring.style.transform = `scale(${scale.toFixed(2)})`;
+      }
+    }
+  }
+}
+
+function visualizerLoop() {
+  const shouldBeActive = isPlaying && !isMuted;
+
+  if (shouldBeActive) {
+    // Smoothly lift up into active position
+    visualizerPresence += (1 - visualizerPresence) * 0.14;
+    if (1 - visualizerPresence < 0.002) {
+      visualizerPresence = 1;
+    }
+  } else {
+    // Silky smooth settling descent down into the bottom
+    visualizerPresence *= 0.90;
+    if (visualizerPresence <= 0.004) {
+      visualizerPresence = 0;
+      visualizerAnimId = null;
+      drawCanvasVisuals();
+      updateAcousticReactivity();
+      return;
+    }
+  }
+
+  wavePhase += 0.088;
+  drawCanvasVisuals();
+  updateAcousticReactivity();
+  visualizerAnimId = requestAnimationFrame(visualizerLoop);
+}
+
+function startVisualizer() {
+  if (visualizerAnimId !== null) return;
+  visualizerAnimId = requestAnimationFrame(visualizerLoop);
+}
+
+function stopVisualizer(immediate = false) {
+  if (immediate) {
+    if (visualizerAnimId !== null) {
+      cancelAnimationFrame(visualizerAnimId);
+      visualizerAnimId = null;
+    }
+    visualizerPresence = 0;
+    drawCanvasVisuals();
+    updateAcousticReactivity();
+    return;
+  }
+
+  // Keep RAF running while visualizerPresence smoothly settles down to 0
+  if (visualizerAnimId === null && visualizerPresence > 0.004) {
+    visualizerAnimId = requestAnimationFrame(visualizerLoop);
+  }
+}
+
+// --- Active Session Timer & Clock Engine ---
+let activeSessionStartTime = 0;
+let accumulatedActiveMs = 0;
+let isTimerActive = false;
+let userOverrodeClock = false;
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+}
+
+function startSessionTimer() {
+  isTimerActive = true;
+  userOverrodeClock = false;
+  activeSessionStartTime = Date.now() - accumulatedActiveMs;
+  tick();
+}
+
+function pauseSessionTimer() {
+  if (isTimerActive) {
+    accumulatedActiveMs = Math.max(0, Date.now() - activeSessionStartTime);
+    isTimerActive = false;
+  }
+  userOverrodeClock = false;
+  tick();
+}
+
+function resetSessionTimer() {
+  accumulatedActiveMs = 0;
+  if (isTimerActive) {
+    activeSessionStartTime = Date.now();
+  }
+  tick();
+}
+
 function tick() {
-  const now = new Date();
-  clockDisplay.textContent = now.toLocaleTimeString([], { hour12: false });
+  if (!clockDisplay) return;
+
+  const showDuration = userOverrodeClock ? !isTimerActive : isTimerActive;
+
+  if (showDuration) {
+    const currentMs = isTimerActive
+      ? Math.max(0, Date.now() - activeSessionStartTime)
+      : accumulatedActiveMs;
+    const formatted = formatDuration(currentMs);
+    clockDisplay.textContent = formatted;
+    clockDisplay.classList.add("is-active");
+    clockDisplay.title = isTimerActive
+      ? `Active Focus Time: ${formatted} (click to view local time)`
+      : `Session Duration: ${formatted} (click to view local time)`;
+  } else {
+    const now = new Date();
+    clockDisplay.textContent = now.toLocaleTimeString([], { hour12: false });
+    clockDisplay.classList.remove("is-active");
+    clockDisplay.title = accumulatedActiveMs > 0
+      ? `Local Time (click to view active time: ${formatDuration(accumulatedActiveMs)})`
+      : "Local Time (starts active timer during playback)";
+  }
 }
 
 // --- Volume & Master Gain ---
@@ -916,6 +1399,7 @@ function setMasterVolume(val) {
   if (isMuted) {
     isMuted = false;
     muteToggleBtn.classList.remove("muted");
+    if (isPlaying) startVisualizer();
   }
 
   if (audio && isPlaying) {
@@ -934,6 +1418,12 @@ function toggleMute() {
     const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
     audio.masterGain.gain.cancelScheduledValues(now);
     audio.masterGain.gain.setTargetAtTime(targetGain, now, 0.03);
+  }
+
+  if (isMuted) {
+    stopVisualizer(false);
+  } else if (isPlaying) {
+    startVisualizer();
   }
 }
 
@@ -1014,6 +1504,8 @@ function applyTheme(theme) {
     btn.setAttribute("title", isLight ? "Switch to Dark Mode (T)" : "Switch to Light Mode (T)");
     btn.setAttribute("aria-label", isLight ? "Switch to Dark Mode (T)" : "Switch to Light Mode (T)");
   }
+
+  drawCanvasVisuals();
 }
 
 function toggleTheme() {
@@ -1051,6 +1543,12 @@ function setupKeyboardShortcuts() {
     } else if (e.code === "KeyT") {
       e.preventDefault();
       toggleTheme();
+    } else if (e.code === "KeyS") {
+      e.preventDefault();
+      const surpriseIdx = PRESETS.findIndex(p => p.name.includes("Surprise"));
+      if (surpriseIdx !== -1) {
+        applyPreset(surpriseIdx);
+      }
     } else if (e.key >= "1" && e.key <= "6") {
       const idx = parseInt(e.key, 10) - 1;
       if (PRESETS[idx]) {
@@ -1144,6 +1642,7 @@ function initEvents() {
     if (curveRenderFrame !== null) return;
     curveRenderFrame = requestAnimationFrame(() => {
       curveRenderFrame = null;
+      resizeBackdropCanvas();
       renderCurve();
     });
   }, { passive: true });
@@ -1158,6 +1657,17 @@ function initEvents() {
     fullscreenToggleBtn.addEventListener("click", toggleFullscreen);
   }
 
+  if (clockDisplay) {
+    clockDisplay.addEventListener("click", () => {
+      userOverrodeClock = !userOverrodeClock;
+      tick();
+    });
+    clockDisplay.addEventListener("dblclick", e => {
+      e.preventDefault();
+      resetSessionTimer();
+    });
+  }
+
   document.addEventListener("fullscreenchange", updateFullscreenUI);
   document.addEventListener("webkitfullscreenchange", updateFullscreenUI);
 }
@@ -1168,6 +1678,7 @@ function boot() {
   cycleFocusQuote();
   initNodesAndAxis();
   renderPresetsGrid();
+  initBackdropCanvas();
   renderCurve();
   setupPointerInteraction();
   setupKeyboardShortcuts();

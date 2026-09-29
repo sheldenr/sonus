@@ -159,10 +159,12 @@ a {
   font-feature-settings: "tnum" on;
   font-weight: 500;
   user-select: none;
+  cursor: pointer;
   transition: color 0.2s ease;
 }
 
-.clock-display:hover {
+.clock-display:hover,
+.clock-display.is-active {
   color: var(--text-primary);
 }
 
@@ -241,6 +243,15 @@ a {
 .eq-plot-wrap::after {
   right: 0;
   background: linear-gradient(-90deg, var(--bg-base) 0%, transparent 100%);
+}
+
+.eq-backdrop-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* dB Grid Lines — Going completely to the side of the page across full viewport */
