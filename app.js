@@ -12,9 +12,9 @@ const BANDS = [
   { label: "1 kHz", freq: 1000, binMin: 10, binMax: 20 },
   { label: "2 kHz", freq: 2000, binMin: 20, binMax: 40 },
   { label: "4 kHz", freq: 4000, binMin: 40, binMax: 80 },
-  { label: "8 kHz", freq: 8000, binMin: 80, binMax: 140 },
-  { label: "12 kHz", freq: 12000, binMin: 130, binMax: 190 },
-  { label: "16 kHz", freq: 16000, binMin: 180, binMax: 240 }
+  { label: "8 kHz", freq: 8000 },
+  { label: "12 kHz", freq: 12000 },
+  { label: "16 kHz", freq: 16000 }
 ];
 
 // --- 17 Curated Presets ---
@@ -52,10 +52,19 @@ let isPlaying = false;
 let isMuted = false;
 let masterVolume = 0.60;
 const PAGE_LOUDNESS_SCALE = 0.60; // 60% baseline loudness scale
+// Chromium supports the same Web Audio primitives used here.  Older versions
+// of Sonus disabled playback for Chromium because the graph was being rebuilt
+// while the user dragged EQ points.  Keep the engine browser-agnostic instead;
+// the graph below is now persistent and only its AudioParams are automated.
+const isChromiumBrowser = /Chrome|Chromium|Edg|OPR|Brave|Vivaldi/i.test(navigator.userAgent);
 
 let draggingIndex = null;
+let dragRect = null;
+let pendingDragY = null;
+let dragFrameId = null;
 let audio = null;
-let analyserData = null;
+let audioNeedsSync = false;
+let curveAnimationId = null;
 
 // --- DOM Elements ---
 const clockDisplay = document.getElementById("clockDisplay");
@@ -70,7 +79,6 @@ const presetsActiveMode = document.getElementById("presetsActiveMode");
 const flatResetBtn = document.getElementById("flatResetBtn");
 
 const eqPlotWrap = document.getElementById("eqPlotWrap");
-const eqBackdropCanvas = document.getElementById("eqBackdropCanvas");
 const eqPathFill = document.getElementById("eqPathFill");
 const eqPathGlow = document.getElementById("eqPathGlow");
 const eqPathCore = document.getElementById("eqPathCore");
@@ -79,6 +87,10 @@ const eqFrequencyAxis = document.getElementById("eqFrequencyAxis");
 const dragTooltip = document.getElementById("dragTooltip");
 const tooltipBand = document.getElementById("tooltipBand");
 const tooltipVal = document.getElementById("tooltipVal");
+let curveHandles = [];
+let curveAxisLabels = [];
+let presetPills = [];
+let curveRenderFrame = null;
 
 const mainFocusBtn = document.getElementById("mainFocusBtn");
 const playSvgPath = document.getElementById("playSvgPath");
@@ -89,6 +101,8 @@ const presetPillGrid = document.getElementById("presetPillGrid");
 function initNodesAndAxis() {
   eqNodesLayer.innerHTML = "";
   eqFrequencyAxis.innerHTML = "";
+  curveHandles = [];
+  curveAxisLabels = [];
 
   BANDS.forEach((band, i) => {
     // Interactive handle element
@@ -104,6 +118,7 @@ function initNodesAndAxis() {
       <div class="handle-ring"></div>
     `;
     eqNodesLayer.appendChild(handle);
+    curveHandles.push(handle);
 
     // Axis label
     const axisLabel = document.createElement("button");
@@ -113,18 +128,26 @@ function initNodesAndAxis() {
     axisLabel.textContent = band.label.replace(" ", "");
     axisLabel.title = `Click to toggle ${band.label}`;
     axisLabel.addEventListener("click", () => {
-      eqValues[i] = eqValues[i] === 0 ? 4 : 0;
+      const targetValues = [...eqValues];
+      targetValues[i] = targetValues[i] === 0 ? 4 : 0;
       updatePresetTitle("Custom Curve", "hand shaped");
-      renderCurve();
-      updateAudioFilters();
+      animateCurveTransition(targetValues, 260);
+      if (audio && isPlaying) {
+        rampAudioFilters(targetValues, 0.26);
+      } else {
+        audioNeedsSync = true;
+      }
     });
     eqFrequencyAxis.appendChild(axisLabel);
+    curveAxisLabels.push(axisLabel);
   });
 }
 
 // --- Render Glass Presets Grid (All 17 Presets Visible) ---
 function renderPresetsGrid() {
   presetPillGrid.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+  presetPills = [];
 
   PRESETS.forEach((preset, i) => {
     const pill = document.createElement("button");
@@ -136,7 +159,16 @@ function renderPresetsGrid() {
       <span class="preset-pill-desc">${preset.desc}</span>
     `;
     pill.addEventListener("click", () => applyPreset(i));
-    presetPillGrid.appendChild(pill);
+    fragment.appendChild(pill);
+    presetPills.push(pill);
+  });
+
+  presetPillGrid.appendChild(fragment);
+}
+
+function updatePresetPillState() {
+  presetPills.forEach((pill, index) => {
+    pill.classList.toggle("active", index === activePresetIndex);
   });
 }
 
@@ -161,7 +193,7 @@ function catmullRomToBezier(points) {
 }
 
 // --- Render Equalizer Curve and Place Handles ---
-function renderCurve() {
+function renderCurve({ updateHandles = true, updateAccessibility = true } = {}) {
   const svgWidth = 1000;
   const svgHeight = 360;
   const marginX = 55;
@@ -190,76 +222,25 @@ function renderCurve() {
   eqPathFill.setAttribute("d", fillD);
 
   // Position HTML handles
-  const handles = eqNodesLayer.querySelectorAll(".eq-handle");
-  const axisLabels = eqFrequencyAxis.querySelectorAll(".axis-band-label");
-
   points.forEach(([x, y], i) => {
-    const handle = handles[i];
-    if (handle) {
+    const handle = curveHandles[i];
+    if (handle && updateHandles) {
       handle.style.left = `${(x / svgWidth) * 100}%`;
       handle.style.top = `${(y / svgHeight) * 100}%`;
-      handle.setAttribute("aria-valuenow", eqValues[i]);
+      if (updateAccessibility) {
+        handle.setAttribute("aria-valuenow", eqValues[i]);
+      }
     }
 
-    const axisLabel = axisLabels[i];
-    if (axisLabel) {
+    const axisLabel = curveAxisLabels[i];
+    if (axisLabel && updateAccessibility) {
       axisLabel.classList.toggle("active", Math.abs(eqValues[i]) >= 3 || draggingIndex === i);
     }
   });
 }
 
 // --- Smooth Visual Curve Transition Engine ---
-let curveAnimationId = null;
-
-function cancelCurveAnimation() {
-  if (curveAnimationId !== null) {
-    cancelAnimationFrame(curveAnimationId);
-    curveAnimationId = null;
-  }
-  if (eqPlotWrap) {
-    eqPlotWrap.classList.remove("is-morphing");
-  }
-}
-
-function animateCurveTransition(targetValues, durationMs = 450) {
-  cancelCurveAnimation();
-
-  if (eqPlotWrap) {
-    eqPlotWrap.classList.add("is-morphing");
-  }
-
-  const startValues = [...eqValues];
-  const startTime = performance.now();
-
-  function step(now) {
-    const elapsed = now - startTime;
-    const progress = Math.min(1, elapsed / durationMs);
-
-    // Smooth cubic ease-out: starts responsive, eases gently into place
-    const eased = 1 - Math.pow(1 - progress, 3);
-
-    eqValues = startValues.map((start, i) => {
-      return start + (targetValues[i] - start) * eased;
-    });
-
-    renderCurve();
-
-    if (progress < 1) {
-      curveAnimationId = requestAnimationFrame(step);
-    } else {
-      eqValues = [...targetValues];
-      renderCurve();
-      curveAnimationId = null;
-      if (eqPlotWrap) {
-        eqPlotWrap.classList.remove("is-morphing");
-      }
-    }
-  }
-
-  curveAnimationId = requestAnimationFrame(step);
-}
-
-// --- Apply Preset ---
+// --- Apply Preset (Instant, Zero Animation Overhead) ---
 function applyPreset(index) {
   activePresetIndex = index;
   const preset = PRESETS[index];
@@ -271,26 +252,64 @@ function applyPreset(index) {
     audio.context.resume().catch(() => {});
   }
 
-  // Crossfade noise generator buffer type (450ms fade)
-  setNoiseType(preset.noise, 0.45);
+  setNoiseType(preset.noise);
+  animateCurveTransition([...preset.values], 420);
+  if (audio && isPlaying) {
+    rampAudioFilters(preset.values, 0.42);
+  } else {
+    audioNeedsSync = true;
+  }
 
-  // Smoothly ramp audio biquad equalizer filters (450ms fade)
-  rampAudioFilters(preset.values, 0.45);
+  updatePresetPillState();
+}
 
-  // Smoothly animate the visual curve line and control nodes (450ms fade)
-  animateCurveTransition(preset.values, 450);
+function cancelCurveAnimation() {
+  if (curveAnimationId !== null) {
+    cancelAnimationFrame(curveAnimationId);
+    curveAnimationId = null;
+  }
+}
 
-  // Update active state in glass buttons
-  document.querySelectorAll(".preset-pill").forEach(pill => {
-    pill.classList.toggle("active", Number(pill.dataset.index) === index);
-  });
+function animateCurveTransition(targetValues, duration = 420) {
+  cancelCurveAnimation();
+
+  const startValues = [...eqValues];
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion || duration <= 0) {
+    eqValues = [...targetValues];
+    renderCurve();
+    return;
+  }
+
+  const startTime = performance.now();
+  const step = now => {
+    const progress = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    eqValues = startValues.map((value, index) => (
+      value + (targetValues[index] - value) * eased
+    ));
+    renderCurve();
+
+    if (progress < 1) {
+      curveAnimationId = requestAnimationFrame(step);
+    } else {
+      eqValues = [...targetValues];
+      renderCurve();
+      curveAnimationId = null;
+    }
+  };
+
+  curveAnimationId = requestAnimationFrame(step);
 }
 
 function updatePresetTitle(customTitle, subTitle = "hand shaped") {
+  if (activePresetIndex === -1 && currentPresetName && currentPresetName.textContent === customTitle) {
+    return;
+  }
   activePresetIndex = -1;
   if (currentPresetName) currentPresetName.textContent = customTitle;
   if (presetsActiveMode) presetsActiveMode.textContent = subTitle;
-  document.querySelectorAll(".preset-pill").forEach(pill => pill.classList.remove("active"));
+  updatePresetPillState();
 }
 
 // --- Mobile WebKit / iOS Audio Session & Hardware Silent Mode Fix ---
@@ -311,6 +330,10 @@ function getSilentAudio() {
 }
 
 function enableAudioSessionPlayback() {
+  // audioSession and the silent media element are WebKit workarounds only.
+  // Starting a second media element in Chromium can compete with the actual
+  // AudioContext for autoplay/audio-focus and is unnecessary there.
+  if (isChromiumBrowser) return;
   try {
     if (typeof navigator !== "undefined" && "audioSession" in navigator) {
       navigator.audioSession.type = "playback";
@@ -338,6 +361,7 @@ function disableAudioSessionPlayback() {
 let audioUnlocked = false;
 
 function unlockAudioContext() {
+  if (isChromiumBrowser) return;
   if (audioUnlocked) return;
 
   enableAudioSessionPlayback();
@@ -377,6 +401,7 @@ function removeUnlockListeners() {
 }
 
 function setupUnlockListeners() {
+  if (isChromiumBrowser) return;
   const events = ["touchstart", "touchend", "click"];
   events.forEach(evt => {
     document.addEventListener(evt, unlockAudioContext, { capture: true, passive: true });
@@ -384,6 +409,15 @@ function setupUnlockListeners() {
 }
 
 // --- High-Fidelity Audio Synthesis Engine ---
+const noiseBufferCache = {};
+
+function getNoiseBuffer(context, type) {
+  if (!noiseBufferCache[type]) {
+    noiseBufferCache[type] = createNoiseBuffer(context, type);
+  }
+  return noiseBufferCache[type];
+}
+
 function createNoiseBuffer(context, type) {
   const sampleRate = context.sampleRate || 44100;
   const bufferSize = Math.floor(sampleRate * 4);
@@ -429,14 +463,23 @@ function initAudioSystem() {
 
   let context;
   try {
-    context = new AudioContextClass();
+    // `interactive` keeps control changes responsive without forcing a tiny
+    // buffer size.  The actual noise source is continuous, so low output
+    // latency is not worth the extra CPU/jitter on Chromium laptops.
+    context = new AudioContextClass({ latencyHint: "interactive" });
   } catch (err) {
-    console.warn("Failed to create AudioContext:", err);
-    return;
+    // A few older WebKit builds reject the options object. Keep the fallback
+    // so the same engine still starts there without weakening Chromium's path.
+    try {
+      context = new AudioContextClass();
+    } catch (fallbackError) {
+      console.warn("Failed to create AudioContext:", fallbackError || err);
+      return;
+    }
   }
 
   const source = context.createBufferSource();
-  source.buffer = createNoiseBuffer(context, currentNoiseType);
+  source.buffer = getNoiseBuffer(context, currentNoiseType);
   source.loop = true;
 
   // Source Gain Node (enables click-free crossfades between noise types)
@@ -448,31 +491,17 @@ function initAudioSystem() {
   masterGain.gain.setValueAtTime(0, context.currentTime);
 
   // Equalizer Biquad Filters Chain (10 Bands)
-  const filters = BANDS.map((band, i) => {
-    const filter = context.createBiquadFilter();
-    filter.type = "peaking";
-    filter.frequency.value = band.freq;
-    filter.Q.value = 0.95;
-    filter.gain.value = eqValues[i];
-    return filter;
-  });
+  const filters = createFilterChain(context, eqValues);
 
-  // Fast Fourier Transform (FFT) Analyser Node
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.82;
-
-  // Audio Graph: source -> sourceGain -> filters[0..9] -> analyser -> masterGain -> destination
+  // Simple audio graph: source -> filters -> master -> destination
   source.connect(sourceGain);
   sourceGain.connect(filters[0]);
   for (let i = 0; i < filters.length - 1; i++) {
     filters[i].connect(filters[i + 1]);
   }
-  filters[filters.length - 1].connect(analyser);
-  analyser.connect(masterGain);
+  filters[filters.length - 1].connect(masterGain);
   masterGain.connect(context.destination);
 
-  analyserData = new Uint8Array(analyser.frequencyBinCount);
   source.start(0);
 
   // Mobile WebKit interruption / state recovery
@@ -482,15 +511,29 @@ function initAudioSystem() {
     }
   };
 
-  audio = { context, source, sourceGain, filters, analyser, masterGain };
+  audio = { context, source, sourceGain, filters, masterGain };
 }
 
-// Rapid filter gain update for interactive node dragging
-function updateAudioFilters() {
-  if (!audio) return;
-  eqValues.forEach((val, i) => {
-    audio.filters[i].gain.setTargetAtTime(val, audio.context.currentTime, 0.025);
+function createFilterChain(context, values) {
+  return BANDS.map((band, i) => {
+    const filter = context.createBiquadFilter();
+    filter.type = "peaking";
+    // Chromium rejects/behaves poorly when a filter is asked to run above
+    // Nyquist on devices with a lower output sample rate.
+    filter.frequency.value = Math.min(band.freq, context.sampleRate * 0.45);
+    filter.Q.value = 0.95;
+    filter.gain.value = Math.max(-12, Math.min(12, values[i] || 0));
+    return filter;
   });
+}
+
+function rebuildAudioFilters() {
+  // Kept as a compatibility shim for existing callers.  Disconnecting and
+  // recreating BiquadFilterNodes during playback caused audible gaps in
+  // Chromium.  Update the existing nodes instead.
+  if (!audio) return;
+  rampAudioFilters(eqValues, 0.06);
+  audioNeedsSync = false;
 }
 
 // Silky smooth audio filter ramp for preset fades
@@ -512,6 +555,8 @@ function rampAudioFilters(targetValues, duration = 0.45) {
   });
 }
 
+let pendingRetiringSources = [];
+
 // Smooth noise generator crossfade between types
 function setNoiseType(type, fadeDuration = 0.45) {
   if (type === currentNoiseType) return;
@@ -524,7 +569,7 @@ function setNoiseType(type, fadeDuration = 0.45) {
 
   if (isPlaying) {
     // Crossfade old noise stream out and new noise stream in
-    const newBuffer = createNoiseBuffer(ctx, type);
+    const newBuffer = getNoiseBuffer(ctx, type);
     const newSource = ctx.createBufferSource();
     newSource.buffer = newBuffer;
     newSource.loop = true;
@@ -546,18 +591,31 @@ function setNoiseType(type, fadeDuration = 0.45) {
       oldGain.gain.linearRampToValueAtTime(0.0001, now + fadeDuration);
     }
 
+    const retireItem = { source: oldSource, gain: oldGain };
+    pendingRetiringSources.push(retireItem);
+
     setTimeout(() => {
       try {
-        oldSource.stop(0);
-        oldSource.disconnect();
-        if (oldGain) oldGain.disconnect();
+        retireItem.source.stop(0);
+        retireItem.source.disconnect();
+        if (retireItem.gain) retireItem.gain.disconnect();
       } catch (_) {}
-    }, (fadeDuration + 0.1) * 1000);
+      pendingRetiringSources = pendingRetiringSources.filter(item => item !== retireItem);
+    }, (fadeDuration + 0.05) * 1000);
 
     audio.source = newSource;
     audio.sourceGain = newSourceGain;
   } else {
-    // Audio is paused: cleanly re-create buffer source ready for startPlayback
+    // Audio is paused: clean up any pending retiring sources
+    pendingRetiringSources.forEach(item => {
+      try {
+        item.source.stop(0);
+        item.source.disconnect();
+        if (item.gain) item.gain.disconnect();
+      } catch (_) {}
+    });
+    pendingRetiringSources = [];
+
     try {
       if (audio.source) {
         audio.source.stop(0);
@@ -568,7 +626,7 @@ function setNoiseType(type, fadeDuration = 0.45) {
       }
     } catch (_) {}
 
-    const newBuffer = createNoiseBuffer(ctx, type);
+    const newBuffer = getNoiseBuffer(ctx, type);
     const newSource = ctx.createBufferSource();
     newSource.buffer = newBuffer;
     newSource.loop = true;
@@ -608,6 +666,13 @@ async function startPlayback() {
   }
 
   if (!audio) return;
+
+  // Apply any edits made before the first gesture.  During playback all later
+  // changes use AudioParam ramps and never rebuild the graph.
+  if (audioNeedsSync) {
+    rampAudioFilters(eqValues, 0.06);
+    audioNeedsSync = false;
+  }
 
   const now = audio.context.currentTime;
   const targetGain = isMuted ? 0 : masterVolume * PAGE_LOUDNESS_SCALE;
@@ -686,11 +751,21 @@ function updatePlayButtonUI(playing) {
   }
 }
 
-// --- Usable Pointer Dragging for Frequency Handles ---
-function updateFromPointer(clientY) {
-  if (draggingIndex === null) return;
+function disableChromiumAudioUI() {
+  // Retained for backwards compatibility with older integrations. Chromium
+  // playback is supported and must remain enabled.
+  if (!mainFocusBtn) return;
+  mainFocusBtn.disabled = false;
+  mainFocusBtn.classList.remove("audio-disabled");
+  mainFocusBtn.removeAttribute("aria-disabled");
+  mainFocusBtn.removeAttribute("title");
+}
 
-  const rect = eqPlotWrap.getBoundingClientRect();
+// --- Usable Pointer Dragging for Frequency Handles ---
+function updateFromPointer(clientY, rect = dragRect) {
+  if (draggingIndex === null) return;
+  if (!rect) return;
+
   const relY = clientY - rect.top;
   const centerY = rect.height / 2;
   const maxAmp = (rect.height / 2) * (148 / 180);
@@ -699,11 +774,15 @@ function updateFromPointer(clientY) {
   norm = Math.max(-1, Math.min(1, norm));
 
   const db = Math.round(norm * 12 * 2) / 2;
+  const hasChanged = eqValues[draggingIndex] !== db;
   eqValues[draggingIndex] = db;
 
-  renderCurve();
-  updateAudioFilters();
-  updatePresetTitle("Custom Curve", "hand shaped");
+  if (hasChanged) {
+    renderCurve();
+    // Keep pointer handling purely visual. Audio is synchronized once on
+    // pointer release so Chromium's audio thread is never hit by drag events.
+    updatePresetTitle("Custom Curve", "hand shaped");
+  }
 
   const band = BANDS[draggingIndex];
   tooltipBand.textContent = band.label;
@@ -711,12 +790,27 @@ function updateFromPointer(clientY) {
 
   const nodeEl = eqNodesLayer.children[draggingIndex];
   if (nodeEl) {
-    const nodeLeft = nodeEl.offsetLeft;
-    const nodeTop = nodeEl.offsetTop;
+    // Use the already-known curve coordinates instead of offsetLeft/offsetTop,
+    // which forces Chromium to synchronously flush layout after renderCurve().
+    const nodeLeft = (55 + (draggingIndex / (BANDS.length - 1)) * 890) / 1000 * rect.width;
+    const nodeTop = (centerY - (db / 12) * maxAmp);
     dragTooltip.style.left = `${nodeLeft}px`;
     dragTooltip.style.top = `${nodeTop - 16}px`;
     dragTooltip.classList.add("visible");
   }
+}
+
+function scheduleDragUpdate(clientY) {
+  pendingDragY = clientY;
+  if (dragFrameId !== null) return;
+
+  dragFrameId = requestAnimationFrame(() => {
+    dragFrameId = null;
+    if (pendingDragY !== null && draggingIndex !== null) {
+      updateFromPointer(pendingDragY);
+    }
+    pendingDragY = null;
+  });
 }
 
 function setupPointerInteraction() {
@@ -724,6 +818,7 @@ function setupPointerInteraction() {
     cancelCurveAnimation();
     const handleEl = e.target.closest(".eq-handle");
     const rect = eqPlotWrap.getBoundingClientRect();
+    dragRect = rect;
 
     if (handleEl) {
       draggingIndex = Number(handleEl.dataset.index);
@@ -733,7 +828,7 @@ function setupPointerInteraction() {
       let bestIndex = 0;
 
       for (let i = 0; i < BANDS.length; i++) {
-        const bandNormX = (55 + (i / 9) * (1000 - 110)) / 1000;
+        const bandNormX = (55 + (i / (BANDS.length - 1)) * (1000 - 110)) / 1000;
         const dist = Math.abs(normX - bandNormX);
         if (dist < minDistance) {
           minDistance = dist;
@@ -743,25 +838,43 @@ function setupPointerInteraction() {
       draggingIndex = bestIndex;
     }
 
-    eqPlotWrap.setPointerCapture(e.pointerId);
+    try {
+      eqPlotWrap.setPointerCapture(e.pointerId);
+    } catch (_) {}
     const activeHandle = eqNodesLayer.children[draggingIndex];
     if (activeHandle) activeHandle.classList.add("is-dragging");
 
-    updateFromPointer(e.clientY);
+    scheduleDragUpdate(e.clientY);
   });
 
   eqPlotWrap.addEventListener("pointermove", e => {
     if (draggingIndex !== null) {
-      updateFromPointer(e.clientY);
+      scheduleDragUpdate(e.clientY);
     }
   });
 
-  const stopDragging = () => {
+  const stopDragging = e => {
+    if (dragFrameId !== null) {
+      cancelAnimationFrame(dragFrameId);
+      dragFrameId = null;
+    }
+    pendingDragY = null;
+    if (e && e.pointerId && eqPlotWrap.hasPointerCapture && eqPlotWrap.hasPointerCapture(e.pointerId)) {
+      try {
+        eqPlotWrap.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
     if (draggingIndex !== null) {
       const activeHandle = eqNodesLayer.children[draggingIndex];
       if (activeHandle) activeHandle.classList.remove("is-dragging");
       draggingIndex = null;
+      dragRect = null;
       dragTooltip.classList.remove("visible");
+      if (audio && isPlaying) {
+        rampAudioFilters(eqValues, 0.12);
+      } else {
+        audioNeedsSync = true;
+      }
       if (typeof resetIdleTimer === "function") resetIdleTimer();
     }
   };
@@ -774,117 +887,17 @@ function setupPointerInteraction() {
     const handleEl = e.target.closest(".eq-handle");
     if (handleEl) {
       const idx = Number(handleEl.dataset.index);
-      eqValues[idx] = 0;
+      const targetValues = [...eqValues];
+      targetValues[idx] = 0;
       updatePresetTitle("Custom Curve", "hand shaped");
-      renderCurve();
-      updateAudioFilters();
-    }
-  });
-}
-
-// --- Live Audio Reactive Spectrum Canvas (Monochrome, No Dots) ---
-function drawCanvasVisuals(ctx, width, height) {
-  ctx.clearRect(0, 0, width, height);
-
-  if (audio && isPlaying && analyserData) {
-    audio.analyser.getByteFrequencyData(analyserData);
-
-    const step = width / (analyserData.length * 0.65);
-    ctx.beginPath();
-    ctx.moveTo(0, height);
-
-    for (let i = 0; i < analyserData.length * 0.65; i++) {
-      const x = i * step;
-      const norm = analyserData[i] / 255;
-      const y = height - (norm * (height * 0.65));
-      ctx.lineTo(x, y);
-    }
-
-    ctx.lineTo(width, height);
-    ctx.closePath();
-
-    // Monochrome gradient wash adaptive to theme
-    const isLight = document.body.classList.contains("light-theme");
-    const grad = ctx.createLinearGradient(0, height * 0.35, 0, height);
-    if (isLight) {
-      grad.addColorStop(0, "rgba(0, 0, 0, 0.09)");
-      grad.addColorStop(0.6, "rgba(0, 0, 0, 0.02)");
-      grad.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      // Clean dark wave crest
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.22)";
-      ctx.stroke();
-    } else {
-      grad.addColorStop(0, "rgba(255, 255, 255, 0.14)");
-      grad.addColorStop(0.6, "rgba(255, 255, 255, 0.03)");
-      grad.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      // Clean white wave crest
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-      ctx.stroke();
-    }
-  }
-}
-
-// --- Live Audio Reactive Node Rings ---
-function updateAcousticReactivity() {
-  if (!audio || !isPlaying || !analyserData) {
-    const handles = eqNodesLayer.querySelectorAll(".handle-ring");
-    handles.forEach(ring => {
-      ring.style.transform = "";
-      ring.style.boxShadow = "none";
-    });
-    return;
-  }
-
-  // Pulse node rings gently in scale based on frequency energy (clean, no glow)
-  BANDS.forEach((band, i) => {
-    let bandSum = 0;
-    let count = 0;
-    for (let b = band.binMin; b <= band.binMax && b < analyserData.length; b++) {
-      bandSum += analyserData[b];
-      count++;
-    }
-    const bandEnergy = count > 0 ? (bandSum / count) / 255 : 0;
-    const handleEl = eqNodesLayer.children[i];
-    if (handleEl && draggingIndex !== i) {
-      const ring = handleEl.querySelector(".handle-ring");
-      if (ring) {
-        const scale = 1 + bandEnergy * 0.35;
-        ring.style.transform = `scale(${scale.toFixed(2)})`;
-        ring.style.boxShadow = "none";
+      animateCurveTransition(targetValues, 220);
+      if (audio && isPlaying) {
+        rampAudioFilters(targetValues, 0.22);
+      } else {
+        audioNeedsSync = true;
       }
     }
   });
-}
-
-// --- Animation Render Loop ---
-function animationLoop() {
-  const canvas = eqBackdropCanvas;
-  if (canvas) {
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-    }
-
-    const ctx = canvas.getContext("2d");
-    ctx.save();
-    ctx.scale(dpr, dpr);
-
-    drawCanvasVisuals(ctx, rect.width, rect.height);
-    ctx.restore();
-  }
-
-  updateAcousticReactivity();
-  requestAnimationFrame(animationLoop);
 }
 
 // --- Clock Engine ---
@@ -925,67 +938,13 @@ function toggleMute() {
 }
 
 // --- Ambient Stillness Focus Quotes ---
+// free of decorative quotation marks so the blockquote owns the presentation.
 const FOCUS_QUOTES = [
-  { text: "“Change is the end result of all true learning.”", author: "Leo Buscaglia" },
-  { text: "“The roots of education are bitter, but the fruit is sweet.”", author: "Aristotle" },
-  { text: "“It is the mark of an educated mind to be able to entertain a thought without accepting it.”", author: "Aristotle" },
-  { text: "“Education is the key to unlock the golden door of freedom.”", author: "George Washington Carver" },
-  { text: "“A person who won't read has no advantage over one who can't read.”", author: "Mark Twain" },
-  { text: "“Formal education will make you a living; self-education will make you a fortune.”", author: "Jim Rohn" },
-  { text: "“The whole purpose of education is to turn mirrors into windows.”", author: "Sydney J. Harris" },
-  { text: "“I tell students that the opportunities I had were a result of having a good educational background. Education is what allows you to stand out.”", author: "Ellen Ochoa" },
-  { text: "“The Democratic position seems to be everything is going to be free. Free education. Free health care. Free housing. Free love. Free kittens, I don't know.”", author: "John Kennedy" },
-  { text: "“The giving of love is an education in itself.”", author: "Eleanor Roosevelt" },
-  { text: "“There is no end to education. It is not that you read a book, pass an examination, and finish with education. The whole of life, from the moment you are born to the moment you die, is a process of learning.”", author: "Jiddu Krishnamurti" },
-  { text: "“Education is a weapon whose effects depend on who holds it in his hands and at whom it is aimed.”", author: "Joseph Stalin" },
-  { text: "“A man who has never gone to school may steal from a freight car; but if he has a university education, he may steal the whole railroad.”", author: "Theodore Roosevelt" },
-  { text: "“I've never known any trouble than an hour's reading didn't assuage.”", author: "Arthur Schopenhauer" },
-  { text: "“Education must not simply teach work - it must teach Life.”", author: "W. E. B. Du Bois" },
-  { text: "“What sculpture is to a block of marble, education is to the soul.”", author: "Joseph Addison" },
-  { text: "“A library is the delivery room for the birth of ideas, a place where history comes to life.”", author: "Norman Cousins" },
-  { text: "“Intellectual growth should commence at birth and cease only at death.”", author: "Albert Einstein" },
-  { text: "“I am a part of everything that I have read.”", author: "Theodore Roosevelt" },
-  { text: "“Education is the most powerful weapon which you can use to change the world.”", author: "Nelson Mandela" },
-  { text: "“The function of education is to teach one to think intensively and to think critically. Intelligence plus character - that is the goal of true education.”", author: "Martin Luther King, Jr." },
-  { text: "“Give a man a fish and you feed him for a day; teach a man to fish and you feed him for a lifetime.”", author: "Maimonides" },
-  { text: "“To educate a man in mind and not in morals is to educate a menace to society.”", author: "Theodore Roosevelt" },
-  { text: "“Education is what remains after one has forgotten what one has learned in school.”", author: "Albert Einstein" },
-  { text: "“Knowledge is power. Information is liberating. Education is the premise of progress, in every society, in every family.”", author: "Kofi Annan" },
-  { text: "“Education is not preparation for life; education is life itself.”", author: "John Dewey" },
-  { text: "“My mother said I must always be intolerant of ignorance but understanding of illiteracy. That some people, unable to go to school, were more educated and more intelligent than college professors.”", author: "Maya Angelou" },
-  { text: "“I believe that every American should have stable, dignified housing; health care; education - that the most very basic needs to sustain modern life should be guaranteed in a moral society.”", author: "Alexandria Ocasio-Cortez" },
-  { text: "“Democracy cannot succeed unless those who express their choice are prepared to choose wisely. The real safeguard of democracy, therefore, is education.”", author: "Franklin D. Roosevelt" },
-  { text: "“Education is the ability to listen to almost anything without losing your temper or your self-confidence.”", author: "Robert Frost" },
-  { text: "“Learning is not attained by chance, it must be sought for with ardor and diligence.”", author: "Abigail Adams" },
-  { text: "“The foundation of every state is the education of its youth.”", author: "Diogenes" },
-  { text: "“You have to stay in school. You have to. You have to go to college. You have to get your degree. Because that's the one thing people can't take away from you is your education. And it is worth the investment.”", author: "Michelle Obama" },
-  { text: "“The greatest education in the world is watching the masters at work.”", author: "Michael Jackson" },
-  { text: "“The illiterate of the future will not be the person who cannot read. It will be the person who does not know how to learn.”", author: "Alvin Toffler" },
-  { text: "“A thorough knowledge of the Bible is worth more than a college education.”", author: "Theodore Roosevelt" },
-  { text: "“You are always a student, never a master. You have to keep moving forward.”", author: "Conrad Hall" },
-  { text: "“Until justice is blind to color, until education is unaware of race, until opportunity is unconcerned with the color of men's skins, emancipation will be a proclamation but not a fact.”", author: "Lyndon B. Johnson" },
-  { text: "“Education is an admirable thing, but it is well to remember from time to time that nothing that is worth knowing can be taught.”", author: "Oscar Wilde" },
-  { text: "“I would rather entertain and hope that people learned something than educate people and hope they were entertained.”", author: "Walt Disney" },
-  { text: "“The purpose of education is to make good human beings with skill and expertise... Enlightened human beings can be created by teachers.”", author: "A. P. J. Abdul Kalam" },
-  { text: "“Nothing in this world can take the place of persistence. Talent will not: nothing is more common than unsuccessful men with talent. Genius will not; unrewarded genius is almost a proverb. Education will not: the world is full of educated derelicts. Persistence and determination alone are omnipotent.”", author: "Calvin Coolidge" },
-  { text: "“An investment in knowledge pays the best interest.”", author: "Benjamin Franklin" },
-  { text: "“I have no special talent. I am only passionately curious.”", author: "Albert Einstein" },
-  { text: "“The philosophy of the school room in one generation will be the philosophy of government in the next.”", author: "Abraham Lincoln" },
-  { text: "“In the first place, God made idiots. That was for practice. Then he made school boards.”", author: "Mark Twain" },
-  { text: "“Develop a passion for learning. If you do, you will never cease to grow.”", author: "Anthony J. D'Angelo" },
-  { text: "“Education is not the filling of a pail, but the lighting of a fire.”", author: "William Butler Yeats" },
-  { text: "“Man is what he reads.”", author: "Joseph Brodsky" },
-  { text: "“Until we get equality in education, we won't have an equal society.”", author: "Sonia Sotomayor" },
-  { text: "“Education is a progressive discovery of our own ignorance.”", author: "Will Durant" },
-  { text: "“Education's purpose is to replace an empty mind with an open one.”", author: "Malcolm Forbes" },
-  { text: "“Data is not information, information is not knowledge, knowledge is not understanding, understanding is not wisdom.”", author: "Clifford Stoll" },
-  { text: "“Don't limit a child to your own learning, for he was born in another time.”", author: "Rabindranath Tagore" },
-  { text: "“A fool's brain digests philosophy into folly, science into superstition, and art into pedantry. Hence University education.”", author: "George Bernard Shaw" },
-  { text: "“The only person who is educated is the one who has learned how to learn and change.”", author: "Carl Rogers" },
-  { text: "“Education is the movement from darkness to light.”", author: "Allan Bloom" },
-  { text: "“Education is for improving the lives of others and for leaving your community and world better than you found it.”", author: "Marian Wright Edelman" },
-  { text: "“Cauliflower is nothing but cabbage with a college education.”", author: "Mark Twain" },
-  { text: "“Everybody is ignorant, only on different subjects.”", author: "Will Rogers" }
+  { text: "The roots of education are bitter, but the fruit is sweet.", author: "Aristotle" },
+  { text: "An investment in knowledge pays the best interest.", author: "Benjamin Franklin" },
+  { text: "Education is not preparation for life; education is life itself.", author: "John Dewey" },
+  { text: "Education is an admirable thing, but it is well to remember that nothing worth knowing can be taught.", author: "Oscar Wilde" },
+  { text: "The important thing is not to stop questioning. Curiosity has its own reason for existing.", author: "Albert Einstein" }
 ];
 let currentQuoteIndex = 0;
 
@@ -1102,26 +1061,37 @@ function setupKeyboardShortcuts() {
 }
 
 function resetCurveFlat() {
-  const flatValues = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const flatValues = Array(BANDS.length).fill(0);
   activePresetIndex = -1;
-  document.querySelectorAll(".preset-pill").forEach(pill => pill.classList.remove("active"));
+  updatePresetPillState();
 
   if (currentPresetName) currentPresetName.textContent = "Flat Curve";
   if (presetsActiveMode) presetsActiveMode.textContent = "all zero dB";
 
   setNoiseType("white", 0.45);
-  rampAudioFilters(flatValues, 0.45);
-  animateCurveTransition(flatValues, 450);
+  audioNeedsSync = true;
+  animateCurveTransition(flatValues, 260);
+  if (audio && isPlaying) {
+    rampAudioFilters(flatValues, 0.26);
+    audioNeedsSync = false;
+  }
 }
 
 // --- Ambient Stillness / Idle Mode Engine ---
 let idleTimer = null;
+let lastIdleResetTime = 0;
 const IDLE_DELAY_MS = 3500; // 3.5 seconds of stillness
 
 function resetIdleTimer() {
+  if (draggingIndex !== null) return;
+
   if (document.body.classList.contains("is-idle")) {
     document.body.classList.remove("is-idle");
   }
+
+  const now = performance.now();
+  if (now - lastIdleResetTime < 300) return;
+  lastIdleResetTime = now;
 
   if (idleTimer) {
     clearTimeout(idleTimer);
@@ -1169,7 +1139,14 @@ function initEvents() {
   });
 
   muteToggleBtn.addEventListener("click", toggleMute);
-  window.addEventListener("resize", renderCurve);
+  // Resize only changes the handle percentages; batch the work to one frame.
+  window.addEventListener("resize", () => {
+    if (curveRenderFrame !== null) return;
+    curveRenderFrame = requestAnimationFrame(() => {
+      curveRenderFrame = null;
+      renderCurve();
+    });
+  }, { passive: true });
 
   const themeToggleBtn = document.getElementById("themeToggleBtn");
   if (themeToggleBtn) {
@@ -1195,11 +1172,11 @@ function boot() {
   setupPointerInteraction();
   setupKeyboardShortcuts();
   initEvents();
+  disableChromiumAudioUI();
   initIdleDetector();
   setupUnlockListeners();
   tick();
   setInterval(tick, 1000);
-  requestAnimationFrame(animationLoop);
 }
 
 if (document.readyState === "loading") {
